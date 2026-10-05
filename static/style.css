@@ -1,12 +1,7 @@
 /* =========================================================
    VERITY AI
-   PREMIUM BLACK + PURPLE CHAT UI
-   MATCHES EXISTING HTML + JAVASCRIPT
-   ========================================================= */
-
-
-/* =========================================================
-   FONT
+   RESPONSIVE BLACK + PURPLE UI
+   PHONE • TABLET • LAPTOP • DESKTOP
    ========================================================= */
 
 @import url(
@@ -19,7 +14,6 @@
    ========================================================= */
 
 :root {
-
     --bg: #050506;
     --bg-soft: #08080b;
 
@@ -35,17 +29,11 @@
     --purple-dark: #6d3bd1;
     --purple-light: #b89cff;
 
-    --purple-soft:
-        rgba(139, 92, 246, 0.10);
+    --purple-soft: rgba(139, 92, 246, 0.10);
+    --purple-border: rgba(139, 92, 246, 0.24);
 
-    --purple-border:
-        rgba(139, 92, 246, 0.24);
-
-    --border:
-        rgba(255, 255, 255, 0.075);
-
-    --border-soft:
-        rgba(255, 255, 255, 0.055);
+    --border: rgba(255, 255, 255, 0.075);
+    --border-soft: rgba(255, 255, 255, 0.055);
 
     --danger: #fb7185;
 
@@ -73,21 +61,18 @@ html,
 body {
     width: 100%;
     height: 100%;
+    min-height: 100%;
 }
 
 body {
-
     background: var(--bg);
-
     color: var(--text);
-
     font-family: var(--font);
-
     font-size: 14px;
-
     line-height: 1.6;
 
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 
     overflow: hidden;
 }
@@ -103,8 +88,12 @@ button {
 }
 
 a {
-    text-decoration: none;
     color: inherit;
+    text-decoration: none;
+}
+
+img {
+    max-width: 100%;
 }
 
 
@@ -113,35 +102,27 @@ a {
    ========================================================= */
 
 .app {
-
     width: 100%;
-
     height: 100vh;
-
     height: 100dvh;
 
     display: flex;
-
     flex-direction: column;
 
     position: relative;
-
     overflow: hidden;
 
     background:
-
         radial-gradient(
             circle at 50% -20%,
             rgba(124, 58, 237, 0.14),
             transparent 42%
         ),
-
         radial-gradient(
             circle at 90% 80%,
             rgba(168, 85, 247, 0.035),
             transparent 30%
         ),
-
         #050506;
 }
 
@@ -151,31 +132,23 @@ a {
    ========================================================= */
 
 .topbar {
-
+    width: 100%;
     height: 68px;
-
     min-height: 68px;
 
-    width: 100%;
-
     display: flex;
-
     align-items: center;
 
     padding: 0 30px;
 
-    background:
-        rgba(5, 5, 7, 0.88);
+    background: rgba(5, 5, 7, 0.88);
 
-    border-bottom:
-        1px solid var(--border);
+    border-bottom: 1px solid var(--border);
 
     position: relative;
-
     z-index: 100;
 
     backdrop-filter: blur(18px);
-
     -webkit-backdrop-filter: blur(18px);
 }
 
@@ -185,32 +158,27 @@ a {
    ========================================================= */
 
 .brand {
-
     display: flex;
-
     align-items: center;
-
     gap: 11px;
 
     color: #f5f2f8;
 
     font-size: 16px;
-
     font-weight: 700;
 
     letter-spacing: -0.025em;
+
+    white-space: nowrap;
 }
 
 .brand-mark {
-
     width: 34px;
-
     height: 34px;
+    flex: 0 0 34px;
 
     display: flex;
-
     align-items: center;
-
     justify-content: center;
 
     border-radius: 11px;
@@ -225,7 +193,6 @@ a {
     color: white;
 
     font-size: 14px;
-
     font-weight: 700;
 
     box-shadow:
@@ -238,29 +205,25 @@ a {
    ========================================================= */
 
 .system-status {
-
     margin-left: auto;
-
     margin-right: 22px;
 
     display: flex;
-
     align-items: center;
-
     gap: 8px;
 
     color: #aaa3b0;
 
     font-size: 11px;
-
     font-weight: 500;
+
+    white-space: nowrap;
 }
 
 .status-dot {
-
     width: 7px;
-
     height: 7px;
+    flex: 0 0 7px;
 
     border-radius: 50%;
 
@@ -277,46 +240,40 @@ a {
    ========================================================= */
 
 .dashboard-btn {
-
     height: 38px;
+    min-width: 92px;
 
     padding: 0 15px;
 
     display: flex;
-
     align-items: center;
-
     justify-content: center;
 
-    border:
-        1px solid rgba(255, 255, 255, 0.09);
-
+    border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 11px;
 
-    background:
-        rgba(255, 255, 255, 0.025);
+    background: rgba(255, 255, 255, 0.025);
 
     color: #aaa3b2;
 
     font-size: 10px;
-
     font-weight: 600;
 
     letter-spacing: 0.02em;
 
     transition:
-        0.2s ease;
+        color 0.2s ease,
+        border-color 0.2s ease,
+        background 0.2s ease,
+        box-shadow 0.2s ease;
 }
 
 .dashboard-btn:hover {
-
     color: white;
 
-    border-color:
-        rgba(139, 92, 246, 0.38);
+    border-color: rgba(139, 92, 246, 0.38);
 
-    background:
-        rgba(139, 92, 246, 0.10);
+    background: rgba(139, 92, 246, 0.10);
 
     box-shadow:
         0 0 22px rgba(139, 92, 246, 0.08);
@@ -328,19 +285,15 @@ a {
    ========================================================= */
 
 .chat-box {
-
     flex: 1;
-
     min-height: 0;
 
     width: 100%;
 
     display: flex;
-
     flex-direction: column;
 
     position: relative;
-
     overflow: hidden;
 
     padding: 0 20px;
@@ -348,18 +301,13 @@ a {
 
 
 /* =========================================================
-   CHAT MESSAGE SCROLL AREA
+   CHAT
    ========================================================= */
 
 .chat {
-
-    width: min(
-        860px,
-        100%
-    );
+    width: min(860px, 100%);
 
     flex: 1;
-
     min-height: 0;
 
     overflow-y: auto;
@@ -379,49 +327,40 @@ a {
 }
 
 .chat::-webkit-scrollbar {
-
     width: 6px;
 }
 
 .chat::-webkit-scrollbar-track {
-
     background: transparent;
 }
 
 .chat::-webkit-scrollbar-thumb {
-
-    background:
-        rgba(139, 92, 246, 0.28);
-
+    background: rgba(139, 92, 246, 0.28);
     border-radius: 20px;
 }
 
 
 /* =========================================================
-   WELCOME MESSAGE
+   WELCOME
    ========================================================= */
 
 .welcome-message {
-
     max-width: 680px;
 
     margin:
-        80px
+        clamp(50px, 12vh, 100px)
         auto
-        80px;
-
-    padding: 0;
+        70px;
 
     text-align: center;
 }
 
 .welcome-title {
-
     margin-bottom: 12px;
 
     color: #f5f1f8;
 
-    font-size: 30px;
+    font-size: clamp(25px, 3vw, 30px);
 
     font-weight: 700;
 
@@ -429,20 +368,15 @@ a {
 }
 
 .welcome-text {
-
     margin-bottom: 6px;
 
     color: #aaa3b1;
 
     font-size: 14px;
-
-    font-weight: 400;
 }
 
 .welcome-line {
-
     color: #6f6877;
-
     font-size: 12px;
 }
 
@@ -452,7 +386,6 @@ a {
    ========================================================= */
 
 .message {
-
     width: 100%;
 
     display: flex;
@@ -466,7 +399,6 @@ a {
 }
 
 @keyframes messageAppear {
-
     from {
         opacity: 0;
         transform: translateY(5px);
@@ -484,12 +416,10 @@ a {
    ========================================================= */
 
 .message.user {
-
     justify-content: flex-end;
 }
 
 .message.user .message-bubble {
-
     max-width: 68%;
 
     padding:
@@ -509,14 +439,11 @@ a {
             rgba(88, 28, 135, 0.22)
         );
 
-    border:
-        1px solid
-        rgba(139, 92, 246, 0.22);
+    border: 1px solid rgba(139, 92, 246, 0.22);
 
     color: #f0ecf5;
 
     font-size: 13px;
-
     line-height: 1.65;
 
     box-shadow:
@@ -533,42 +460,31 @@ a {
    ========================================================= */
 
 .message.bot {
-
     justify-content: flex-start;
-
     align-items: flex-start;
 
     gap: 11px;
 }
 
 .message.bot::before {
-
     content: "✦";
 
-    flex:
-        0 0
-        30px;
+    flex: 0 0 30px;
 
     width: 30px;
-
     height: 30px;
 
     display: flex;
-
     align-items: center;
-
     justify-content: center;
 
     margin-top: 1px;
 
     border-radius: 10px;
 
-    background:
-        rgba(139, 92, 246, 0.11);
+    background: rgba(139, 92, 246, 0.11);
 
-    border:
-        1px solid
-        rgba(139, 92, 246, 0.18);
+    border: 1px solid rgba(139, 92, 246, 0.18);
 
     color: #b79cff;
 
@@ -576,12 +492,9 @@ a {
 }
 
 .message.bot .message-bubble {
-
     max-width: 72%;
 
-    padding:
-        3px
-        0;
+    padding: 3px 0;
 
     border: 0;
 
@@ -590,7 +503,6 @@ a {
     color: #d2cdd8;
 
     font-size: 13px;
-
     line-height: 1.8;
 
     white-space: pre-wrap;
@@ -598,30 +510,19 @@ a {
     overflow-wrap: anywhere;
 }
 
-
-/*
-   IMPORTANT:
-   Remove old "VERITY >" terminal prefix.
-*/
-
 .message.bot .message-bubble::before {
-
     content: none;
 }
 
 
 /* =========================================================
-   9. PRODUCTS
+   PRODUCTS
    ========================================================= */
 
 .products-section {
-
     display: none;
 
-    width: min(
-        860px,
-        100%
-    );
+    width: min(860px, 100%);
 
     max-height: 320px;
 
@@ -632,14 +533,12 @@ a {
         auto
         12px;
 
-    padding:
-        18px;
+    padding: 18px;
 
     background:
         rgba(9, 9, 13, 0.95);
 
-    border:
-        1px solid var(--border);
+    border: 1px solid var(--border);
 
     border-radius: 18px;
 
@@ -654,38 +553,29 @@ a {
 }
 
 .products-section.visible {
-
     display: block;
 }
 
 .products-section::-webkit-scrollbar {
-
     width: 5px;
 }
 
 .products-section::-webkit-scrollbar-thumb {
-
-    background:
-        rgba(139, 92, 246, 0.3);
-
+    background: rgba(139, 92, 246, 0.3);
     border-radius: 20px;
 }
 
 
 /* =========================================================
-   PRODUCT SECTION TITLE
+   PRODUCT TITLE
    ========================================================= */
 
 .section-title {
-
     display: flex;
-
     align-items: center;
-
     gap: 9px;
 
     margin-bottom: 15px;
-
     padding-bottom: 12px;
 
     border-bottom:
@@ -695,7 +585,6 @@ a {
     color: #ddd7e4;
 
     font-size: 11px;
-
     font-weight: 700;
 
     letter-spacing: 0.06em;
@@ -704,13 +593,10 @@ a {
 }
 
 .section-title::before {
-
     content: "";
 
     width: 6px;
-
     height: 6px;
-
     flex: 0 0 6px;
 
     border-radius: 50%;
@@ -727,14 +613,10 @@ a {
    ========================================================= */
 
 .products {
-
     display: grid;
 
     grid-template-columns:
-        repeat(
-            3,
-            minmax(0, 1fr)
-        );
+        repeat(3, minmax(0, 1fr));
 
     gap: 12px;
 }
@@ -745,9 +627,7 @@ a {
    ========================================================= */
 
 .product-card {
-
     min-width: 0;
-
     overflow: hidden;
 
     padding: 10px;
@@ -762,13 +642,14 @@ a {
         rgba(255, 255, 255, 0.018);
 
     transition:
-        0.22s ease;
+        transform 0.22s ease,
+        border-color 0.22s ease,
+        background 0.22s ease,
+        box-shadow 0.22s ease;
 }
 
 .product-card:hover {
-
-    transform:
-        translateY(-3px);
+    transform: translateY(-3px);
 
     border-color:
         rgba(139, 92, 246, 0.30);
@@ -787,9 +668,7 @@ a {
    ========================================================= */
 
 .product-image-container {
-
     width: 100%;
-
     height: 145px;
 
     margin-bottom: 11px;
@@ -797,9 +676,7 @@ a {
     overflow: hidden;
 
     display: flex;
-
     align-items: center;
-
     justify-content: center;
 
     border-radius: 11px;
@@ -808,9 +685,7 @@ a {
 }
 
 .product-image {
-
     width: 100%;
-
     height: 100%;
 
     object-fit: contain;
@@ -824,7 +699,6 @@ a {
    ========================================================= */
 
 .product-title {
-
     display: -webkit-box;
 
     overflow: hidden;
@@ -834,27 +708,21 @@ a {
     color: #e2dce7;
 
     font-size: 11px;
-
     font-weight: 600;
-
     line-height: 1.5;
 
     -webkit-line-clamp: 2;
-
     -webkit-box-orient: vertical;
 }
 
 .product-price {
-
     color: #bda4ff;
 
     font-size: 14px;
-
     font-weight: 700;
 }
 
 .product-source {
-
     margin-top: 4px;
 
     color: #6c6672;
@@ -868,11 +736,8 @@ a {
    ========================================================= */
 
 .product-link {
-
     display: inline-flex;
-
     align-items: center;
-
     justify-content: center;
 
     margin-top: 10px;
@@ -893,7 +758,6 @@ a {
     color: #b79cff;
 
     font-size: 9px;
-
     font-weight: 600;
 
     letter-spacing: 0.03em;
@@ -903,7 +767,6 @@ a {
 }
 
 .product-link:hover {
-
     background:
         rgba(139, 92, 246, 0.18);
 
@@ -915,19 +778,13 @@ a {
 
 
 /* =========================================================
-   10. INPUT AREA
+   INPUT AREA
    ========================================================= */
 
 .input-area {
+    width: min(860px, 100%);
 
-    width: min(
-        860px,
-        100%
-    );
-
-    margin:
-        0
-        auto;
+    margin: 0 auto;
 
     padding:
         8px
@@ -935,21 +792,13 @@ a {
         18px;
 
     display: flex;
-
     align-items: flex-end;
 
     gap: 10px;
 }
 
-
-/* =========================================================
-   MESSAGE INPUT
-   ========================================================= */
-
 .message-input {
-
     flex: 1;
-
     min-width: 0;
 
     height: 52px;
@@ -971,11 +820,7 @@ a {
 
     color: #eeeaf4;
 
-    font-family: var(--font);
-
     font-size: 13px;
-
-    font-weight: 400;
 
     box-shadow:
         0 8px 30px rgba(0, 0, 0, 0.25);
@@ -986,12 +831,10 @@ a {
 }
 
 .message-input::placeholder {
-
     color: #67616e;
 }
 
 .message-input:focus {
-
     border-color:
         rgba(139, 92, 246, 0.42);
 
@@ -1008,13 +851,9 @@ a {
    ========================================================= */
 
 .send-btn {
-
-    flex:
-        0 0
-        84px;
+    flex: 0 0 84px;
 
     width: 84px;
-
     height: 52px;
 
     border: 0;
@@ -1030,10 +869,7 @@ a {
 
     color: white;
 
-    font-family: var(--font);
-
     font-size: 11px;
-
     font-weight: 700;
 
     letter-spacing: 0.04em;
@@ -1049,12 +885,9 @@ a {
 }
 
 .send-btn:hover {
+    transform: translateY(-2px);
 
-    transform:
-        translateY(-2px);
-
-    filter:
-        brightness(1.08);
+    filter: brightness(1.08);
 
     box-shadow:
         0 11px 30px
@@ -1062,14 +895,12 @@ a {
 }
 
 .send-btn:active {
-
     transform:
         translateY(0)
         scale(0.97);
 }
 
 .send-btn:disabled {
-
     opacity: 0.45;
 
     cursor: not-allowed;
@@ -1081,20 +912,13 @@ a {
 
 
 /* =========================================================
-   11. REFINED PROMPT
+   REFINED PROMPT
    ========================================================= */
 
 .refined-prompt {
+    width: 100%;
 
-    width: min(
-        860px,
-        100%
-    );
-
-    margin:
-        0
-        auto
-        6px;
+    margin: 0;
 
     padding:
         9px
@@ -1114,22 +938,21 @@ a {
     font-size: 10px;
 
     line-height: 1.5;
+
+    overflow-wrap: anywhere;
 }
 
 .refined-prompt strong {
-
     color: #b79cff;
 }
 
 
 /* =========================================================
-   12. DASHBOARD OVERLAY
+   DASHBOARD OVERLAY
    ========================================================= */
 
 .dashboard-overlay {
-
     position: fixed;
-
     inset: 0;
 
     background:
@@ -1148,12 +971,10 @@ a {
     z-index: 300;
 
     backdrop-filter: blur(5px);
-
     -webkit-backdrop-filter: blur(5px);
 }
 
 .dashboard-overlay.active {
-
     opacity: 1;
 
     pointer-events: auto;
@@ -1163,30 +984,25 @@ a {
 
 
 /* =========================================================
-   13. DASHBOARD
+   DASHBOARD
    ========================================================= */
 
 .dashboard {
-
     position: fixed;
 
     top: 0;
-
     right: 0;
 
     width: 370px;
-
     max-width: 92vw;
 
     height: 100vh;
-
     height: 100dvh;
 
     display: flex;
-
     flex-direction: column;
 
-    overflow-y: auto;
+    overflow: hidden;
 
     padding: 0;
 
@@ -1217,7 +1033,6 @@ a {
 }
 
 .dashboard.open {
-
     transform:
         translateX(0);
 
@@ -1230,15 +1045,11 @@ a {
    ========================================================= */
 
 .dashboard-header {
-
     height: 67px;
-
     min-height: 67px;
 
     display: flex;
-
     align-items: center;
-
     justify-content: space-between;
 
     padding:
@@ -1251,26 +1062,20 @@ a {
 }
 
 .dashboard-title {
-
     color: #f0ebf5;
 
     font-size: 17px;
-
     font-weight: 700;
 
     letter-spacing: -0.03em;
 }
 
 .dashboard-close {
-
     width: 34px;
-
     height: 34px;
 
     display: flex;
-
     align-items: center;
-
     justify-content: center;
 
     border:
@@ -1291,7 +1096,6 @@ a {
 }
 
 .dashboard-close:hover {
-
     color: white;
 
     background:
@@ -1307,12 +1111,15 @@ a {
    ========================================================= */
 
 .dashboard-content {
-
     padding: 18px;
 
     overflow-y: auto;
 
     flex: 1;
+
+    min-height: 0;
+
+    -webkit-overflow-scrolling: touch;
 }
 
 
@@ -1321,7 +1128,6 @@ a {
    ========================================================= */
 
 .panel {
-
     padding: 16px;
 
     margin-bottom: 11px;
@@ -1336,14 +1142,16 @@ a {
         rgba(255, 255, 255, 0.018);
 }
 
-.panel-title {
+.panel:last-child {
+    margin-bottom: 0;
+}
 
+.panel-title {
     margin-bottom: 10px;
 
     color: #d5cfdb;
 
     font-size: 10px;
-
     font-weight: 700;
 
     text-transform: uppercase;
@@ -1352,7 +1160,6 @@ a {
 }
 
 .panel-value {
-
     color: #aaa3b1;
 
     font-size: 11px;
@@ -1366,41 +1173,103 @@ a {
 
 
 /* =========================================================
+   PII
+   ========================================================= */
+
+#pii {
+    display: block;
+
+    width: 100%;
+
+    color: #aaa3b2;
+
+    font-size: 12px;
+
+    line-height: 1.6;
+
+    visibility: visible;
+
+    opacity: 1;
+
+    word-break: break-word;
+}
+
+#pii.security-warning {
+    color: #ff4d6d;
+}
+
+
+/* =========================================================
    SECURITY
    ========================================================= */
 
 .security-warning {
-
     color: #fbbf24;
 }
 
 .security-danger {
-
     color: #fb7185;
+}
+
+.security-items {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 10px;
+}
+
+.security-item {
+    display: flex;
+
+    align-items: center;
+
+    gap: 9px;
+
+    color: #aaa3b2;
+
+    font-size: 10px;
+
+    line-height: 1.4;
+}
+
+.security-indicator {
+    width: 7px;
+    height: 7px;
+
+    flex: 0 0 7px;
+
+    border-radius: 50%;
+
+    background: #a855f7;
+
+    box-shadow:
+        0 0 8px rgba(168, 85, 247, 0.7);
 }
 
 
 /* =========================================================
    TOKEN METER
-========================================================= */
+   Works with:
+   <div class="token-meter" id="tokenCircle">
+   ========================================================= */
 
 .token-meter {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 20px 0;
-}
-
-.token-circle {
     --usage: 0%;
 
     width: 140px;
     height: 140px;
 
+    margin:
+        20px
+        auto;
+
     position: relative;
 
     display: flex;
+
     align-items: center;
+
     justify-content: center;
 
     border-radius: 50%;
@@ -1414,15 +1283,17 @@ a {
         );
 
     box-shadow:
-        0 0 25px rgba(168, 85, 247, 0.18);
+        0 0 25px
+        rgba(168, 85, 247, 0.18);
 
     isolation: isolate;
 }
 
-.token-circle::before {
+.token-meter::before {
     content: "";
 
     position: absolute;
+
     inset: 9px;
 
     border-radius: 50%;
@@ -1432,17 +1303,27 @@ a {
     z-index: 0;
 }
 
+.token-circle {
+    position: relative;
+
+    width: 140px;
+    height: 140px;
+}
+
 .token-circle-inner {
     position: relative;
+
     z-index: 2;
 
     width: 100%;
     height: 100%;
 
     display: flex;
+
     flex-direction: column;
 
     align-items: center;
+
     justify-content: center;
 
     text-align: center;
@@ -1455,11 +1336,13 @@ a {
     display: block;
 
     position: relative;
+
     z-index: 3;
 
     color: #c084fc;
 
     font-size: 25px;
+
     line-height: 1;
 
     font-weight: 700;
@@ -1467,13 +1350,15 @@ a {
     letter-spacing: -0.5px;
 
     text-shadow:
-        0 0 12px rgba(192, 132, 252, 0.45);
+        0 0 12px
+        rgba(192, 132, 252, 0.45);
 }
 
 .token-circle-inner small {
     display: block;
 
     position: relative;
+
     z-index: 3;
 
     margin-top: 7px;
@@ -1481,6 +1366,7 @@ a {
     color: #77717f;
 
     font-size: 8px;
+
     line-height: 1;
 
     letter-spacing: 1.5px;
@@ -1506,15 +1392,16 @@ a {
 
 #tokenCost {
     color: #c084fc;
+
     font-weight: 600;
 }
 
+
 /* =========================================================
-   FILTER CHANGES / WARNINGS
+   FILTER CHANGES
    ========================================================= */
 
 .filter-change {
-
     padding:
         7px
         0;
@@ -1529,20 +1416,66 @@ a {
 }
 
 .filter-change:last-child {
-
     border-bottom: 0;
 }
 
 
 /* =========================================================
-   14. FOCUS
+   REFINED PROMPT BUTTON
+   ========================================================= */
+
+.refined-prompt-btn {
+    width: 100%;
+
+    min-height: 38px;
+
+    margin-top: 10px;
+
+    padding:
+        8px
+        12px;
+
+    border:
+        1px solid
+        rgba(139, 92, 246, 0.25);
+
+    border-radius: 10px;
+
+    background:
+        rgba(139, 92, 246, 0.08);
+
+    color: #bda4ff;
+
+    font-size: 10px;
+
+    font-weight: 600;
+
+    letter-spacing: 0.03em;
+
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.refined-prompt-btn:hover {
+    background:
+        rgba(139, 92, 246, 0.16);
+
+    border-color:
+        rgba(139, 92, 246, 0.42);
+
+    color: white;
+}
+
+
+/* =========================================================
+   FOCUS
    ========================================================= */
 
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
-
     outline:
         2px solid
         rgba(167, 139, 250, 0.8);
@@ -1552,11 +1485,10 @@ a:focus-visible {
 
 
 /* =========================================================
-   15. SCROLLBARS
+   SCROLLBARS
    ========================================================= */
 
 * {
-
     scrollbar-width: thin;
 
     scrollbar-color:
@@ -1565,19 +1497,15 @@ a:focus-visible {
 }
 
 *::-webkit-scrollbar {
-
     width: 6px;
-
     height: 6px;
 }
 
 *::-webkit-scrollbar-track {
-
     background: transparent;
 }
 
 *::-webkit-scrollbar-thumb {
-
     background:
         rgba(139, 92, 246, 0.28);
 
@@ -1586,213 +1514,657 @@ a:focus-visible {
 
 
 /* =========================================================
-   16. MOBILE
+   LARGE DESKTOP
    ========================================================= */
 
-@media (max-width: 800px) {
+@media (min-width: 1400px) {
 
     .topbar {
-
-        height: 62px;
-
-        min-height: 62px;
-
-        padding:
-            0
-            16px;
-    }
-
-    .system-status {
-
-        display: none;
-    }
-
-    .brand {
-
-        font-size: 14px;
-    }
-
-    .brand-mark {
-
-        width: 30px;
-
-        height: 30px;
-    }
-
-    .chat-box {
-
-        padding:
-            0
-            10px;
+        padding-left: 42px;
+        padding-right: 42px;
     }
 
     .chat {
-
-        padding:
-            20px
-            4px
-            22px;
+        width: min(920px, 100%);
     }
 
-    .welcome-message {
-
-        margin:
-            65px
-            auto;
-    }
-
-    .welcome-title {
-
-        font-size: 27px;
-    }
-
-    .welcome-text {
-
-        font-size: 13px;
+    .products-section,
+    .input-area {
+        width: min(920px, 100%);
     }
 
     .message.user .message-bubble {
-
-        max-width: 84%;
+        max-width: 65%;
     }
 
     .message.bot .message-bubble {
-
-        max-width: 87%;
-    }
-
-    .products-section {
-
-        max-height: 280px;
-
-        padding: 14px;
-
-        border-radius: 15px;
-    }
-
-    .products {
-
-        display: flex;
-
-        overflow-x: auto;
-
-        gap: 10px;
-
-        padding-bottom: 4px;
-    }
-
-    .product-card {
-
-        flex:
-            0 0
-            215px;
-    }
-
-    .input-area {
-
-        padding:
-            7px
-            0
-            12px;
-    }
-
-    .message-input {
-
-        height: 49px;
-
-        border-radius: 14px;
-    }
-
-    .send-btn {
-
-        flex-basis: 72px;
-
-        width: 72px;
-
-        height: 49px;
-
-        border-radius: 14px;
-    }
-
-    .refined-prompt {
-
-        font-size: 9px;
-    }
-
-    .dashboard {
-
-        width:
-            min(
-                370px,
-                94vw
-            );
+        max-width: 70%;
     }
 }
 
 
 /* =========================================================
-   SMALL MOBILE
+   LAPTOP / DESKTOP
    ========================================================= */
 
-@media (max-width: 480px) {
+@media (min-width: 801px) and (max-width: 1200px) {
 
     .topbar {
+        padding:
+            0
+            22px;
+    }
+
+    .chat-box {
+        padding:
+            0
+            15px;
+    }
+
+    .chat {
+        padding:
+            24px
+            8px
+            24px;
+    }
+
+    .products {
+        grid-template-columns:
+            repeat(3, minmax(0, 1fr));
+    }
+}
+
+
+/* =========================================================
+   TABLET
+   601px - 800px
+   ========================================================= */
+
+@media (min-width: 601px) and (max-width: 800px) {
+
+    .topbar {
+        height: 64px;
+        min-height: 64px;
+
+        padding:
+            0
+            18px;
+    }
+
+    .system-status {
+        display: none;
+    }
+
+    .chat-box {
+        padding:
+            0
+            12px;
+    }
+
+    .chat {
+        padding:
+            22px
+            5px
+            22px;
+    }
+
+    .welcome-message {
+        margin:
+            60px
+            auto
+            60px;
+    }
+
+    .message.user .message-bubble {
+        max-width: 78%;
+    }
+
+    .message.bot .message-bubble {
+        max-width: 82%;
+    }
+
+    .products-section {
+        max-height: 300px;
+
+        padding: 15px;
+
+        border-radius: 16px;
+    }
+
+    .products {
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+    }
+
+    .product-image-container {
+        height: 135px;
+    }
+
+    .input-area {
+        padding:
+            7px
+            0
+            14px;
+    }
+
+    .dashboard {
+        width: 390px;
+        max-width: 88vw;
+    }
+}
+
+
+/* =========================================================
+   MOBILE
+   <= 600px
+   ========================================================= */
+
+@media (max-width: 600px) {
+
+    body {
+        font-size: 13px;
+    }
+
+    .topbar {
+        height: 60px;
+        min-height: 60px;
 
         padding:
             0
             12px;
     }
 
+    .brand {
+        font-size: 14px;
+    }
+
+    .brand-mark {
+        width: 30px;
+        height: 30px;
+
+        flex-basis: 30px;
+
+        border-radius: 9px;
+
+        font-size: 12px;
+    }
+
+    .system-status {
+        display: none;
+    }
+
     .dashboard-btn {
+        min-width: 0;
+
+        height: 36px;
 
         padding:
             0
             11px;
+
+        border-radius: 10px;
+
+        font-size: 9px;
     }
 
     .chat-box {
-
         padding:
             0
             7px;
     }
 
-    .welcome-title {
+    .chat {
+        padding:
+            18px
+            4px
+            18px;
+    }
 
+    .welcome-message {
+        margin:
+            48px
+            auto
+            55px;
+
+        padding:
+            0
+            8px;
+    }
+
+    .welcome-title {
         font-size: 25px;
     }
 
-    .message.user .message-bubble {
+    .welcome-text {
+        font-size: 12px;
+    }
 
+    .welcome-line {
+        font-size: 11px;
+    }
+
+    .message {
+        margin-bottom: 20px;
+    }
+
+    .message.user .message-bubble {
         max-width: 90%;
 
+        padding:
+            10px
+            13px;
+
+        border-radius:
+            15px
+            15px
+            4px
+            15px;
+
         font-size: 12px;
+
+        line-height: 1.6;
+    }
+
+    .message.bot {
+        gap: 8px;
+    }
+
+    .message.bot::before {
+        width: 27px;
+        height: 27px;
+
+        flex-basis: 27px;
+
+        border-radius: 9px;
+
+        font-size: 11px;
     }
 
     .message.bot .message-bubble {
-
-        max-width: 88%;
+        max-width: calc(100% - 35px);
 
         font-size: 12px;
+
+        line-height: 1.7;
     }
 
-    .product-card {
 
-        flex-basis: 200px;
+    /* PRODUCT AREA */
+
+    .products-section {
+        max-height: 265px;
+
+        margin-bottom: 8px;
+
+        padding: 13px;
+
+        border-radius: 15px;
     }
 
-    .send-btn {
-
-        flex-basis: 66px;
-
-        width: 66px;
+    .section-title {
+        margin-bottom: 11px;
+        padding-bottom: 9px;
 
         font-size: 10px;
     }
 
-    .dashboard {
+    .products {
+        display: flex;
 
+        grid-template-columns: none;
+
+        overflow-x: auto;
+
+        gap: 10px;
+
+        padding-bottom: 5px;
+
+        scroll-snap-type: x proximity;
+
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .product-card {
+        flex:
+            0 0
+            190px;
+
+        scroll-snap-align: start;
+    }
+
+    .product-image-container {
+        height: 125px;
+    }
+
+    .product-title {
+        font-size: 10px;
+    }
+
+    .product-price {
+        font-size: 13px;
+    }
+
+
+    /* INPUT */
+
+    .input-area {
         width: 100%;
+
+        padding:
+            6px
+            0
+            10px;
+
+        gap: 7px;
+    }
+
+    .message-input {
+        height: 48px;
+
+        padding:
+            0
+            13px;
+
+        border-radius: 13px;
+
+        font-size: 13px;
+    }
+
+    .send-btn {
+        flex:
+            0 0
+            66px;
+
+        width: 66px;
+
+        height: 48px;
+
+        border-radius: 13px;
+
+        font-size: 9px;
+    }
+
+
+    /* DASHBOARD */
+
+    .dashboard {
+        width: 100%;
+        max-width: 100%;
+
+        border-left: 0;
+
+        border-radius: 0;
+    }
+
+    .dashboard-header {
+        height: 60px;
+        min-height: 60px;
+
+        padding:
+            0
+            15px;
+    }
+
+    .dashboard-title {
+        font-size: 15px;
+    }
+
+    .dashboard-content {
+        padding: 13px;
+    }
+
+    .panel {
+        padding: 14px;
+
+        margin-bottom: 9px;
+
+        border-radius: 13px;
+    }
+
+    .panel-title {
+        font-size: 9px;
+    }
+
+    .panel-value {
+        font-size: 11px;
+    }
+
+
+    /* TOKEN */
+
+    .token-meter {
+        width: 125px;
+        height: 125px;
+
+        margin:
+            16px
+            auto;
+    }
+
+    .token-circle-inner span,
+    #tokenPercent {
+        font-size: 22px;
+    }
+
+    .token-circle-inner small {
+        font-size: 7px;
+    }
+
+    .token-details {
+        font-size: 9px;
+    }
+
+
+    /* REFINED PROMPT */
+
+    .refined-prompt {
+        font-size: 9px;
+
+        padding:
+            8px
+            10px;
+    }
+
+    .refined-prompt-btn {
+        min-height: 36px;
+
+        font-size: 9px;
+    }
+}
+
+
+/* =========================================================
+   VERY SMALL PHONES
+   <= 380px
+   ========================================================= */
+
+@media (max-width: 380px) {
+
+    .topbar {
+        padding:
+            0
+            9px;
+    }
+
+    .brand {
+        gap: 7px;
+
+        font-size: 13px;
+    }
+
+    .brand-mark {
+        width: 28px;
+        height: 28px;
+
+        flex-basis: 28px;
+    }
+
+    .dashboard-btn {
+        padding:
+            0
+            9px;
+
+        font-size: 8px;
+    }
+
+    .chat {
+        padding:
+            15px
+            2px
+            15px;
+    }
+
+    .welcome-title {
+        font-size: 23px;
+    }
+
+    .message.user .message-bubble {
+        max-width: 93%;
+    }
+
+    .message.bot .message-bubble {
+        max-width: calc(100% - 33px);
+    }
+
+    .product-card {
+        flex-basis: 175px;
+    }
+
+    .product-image-container {
+        height: 115px;
+    }
+
+    .send-btn {
+        flex-basis: 60px;
+        width: 60px;
+
+        font-size: 8px;
+    }
+
+    .message-input {
+        font-size: 12px;
+    }
+}
+
+
+/* =========================================================
+   PHONE LANDSCAPE
+   ========================================================= */
+
+@media (max-width: 800px) and (orientation: landscape) {
+
+    .topbar {
+        height: 54px;
+        min-height: 54px;
+    }
+
+    .chat {
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+
+    .welcome-message {
+        margin:
+            25px
+            auto
+            35px;
+    }
+
+    .products-section {
+        max-height: 210px;
+    }
+
+    .product-image-container {
+        height: 100px;
+    }
+
+    .input-area {
+        padding-bottom: 7px;
+    }
+}
+
+
+/* =========================================================
+   TOUCH DEVICES
+   ========================================================= */
+
+@media (hover: none) and (pointer: coarse) {
+
+    .product-card:hover {
+        transform: none;
+
+        border-color:
+            rgba(255, 255, 255, 0.07);
+
+        background:
+            rgba(255, 255, 255, 0.018);
+
+        box-shadow: none;
+    }
+
+    .send-btn:hover {
+        transform: none;
+        filter: none;
+    }
+
+    .dashboard-btn:hover {
+        color: #aaa3b2;
+
+        border-color:
+            rgba(255, 255, 255, 0.09);
+
+        background:
+            rgba(255, 255, 255, 0.025);
+
+        box-shadow: none;
+    }
+
+    .dashboard-close:hover {
+        color: #85808d;
+
+        background:
+            rgba(255, 255, 255, 0.025);
+
+        border-color:
+            var(--border);
+    }
+}
+
+
+/* =========================================================
+   SAFE AREA FOR PHONES
+   ========================================================= */
+
+@supports (padding: env(safe-area-inset-bottom)) {
+
+    .topbar {
+        padding-left:
+            max(
+                12px,
+                env(safe-area-inset-left)
+            );
+
+        padding-right:
+            max(
+                12px,
+                env(safe-area-inset-right)
+            );
+    }
+
+    .input-area {
+        padding-bottom:
+            max(
+                10px,
+                env(safe-area-inset-bottom)
+            );
+    }
+
+    .dashboard-content {
+        padding-bottom:
+            max(
+                13px,
+                env(safe-area-inset-bottom)
+            );
     }
 }
 
@@ -1815,65 +2187,7 @@ a:focus-visible {
 
         transition-duration:
             0.01ms !important;
+
+        scroll-behavior: auto !important;
     }
-}
-#pii {
-    display: block;
-    color: #aaa3b2;
-    font-size: 12px;
-    line-height: 1.5;
-    visibility: visible;
-    opacity: 1;
-}
-
-#pii.security-warning {
-    color: #ff4d6d;
-}
-/* =========================================================
-   PII PROTECTION
-========================================================= */
-
-#pii {
-    display: block;
-    width: 100%;
-    color: #aaa3b2;
-    font-size: 12px;
-    line-height: 1.6;
-    visibility: visible;
-    opacity: 1;
-    word-break: break-word;
-}
-
-#pii.security-warning {
-    color: #ff4d6d;
-}
-
-
-/* =========================================================
-   SECURITY PANEL
-========================================================= */
-
-.security-items {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.security-item {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    color: #aaa3b2;
-    font-size: 10px;
-    line-height: 1.4;
-}
-
-.security-indicator {
-    width: 7px;
-    height: 7px;
-    flex: 0 0 7px;
-    border-radius: 50%;
-    background: #a855f7;
-    box-shadow:
-        0 0 8px rgba(168, 85, 247, 0.7);
 }
