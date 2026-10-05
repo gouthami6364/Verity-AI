@@ -4,6 +4,10 @@ Verity AI is a privacy-focused AI chatbot designed to protect sensitive user inf
 
 The system detects personally identifiable information (PII) in user messages, redacts sensitive information before it is sent to the AI model, manages conversation context, monitors token usage and estimated costs, and provides security-related information through a system dashboard.
 
+## Live Demo
+
+[Visit Verity AI](https://verity-ai-zg23.onrender.com)
+
 Features
 
 AI-powered conversational chatbot
