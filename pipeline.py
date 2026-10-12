@@ -1,22 +1,20 @@
 """
 Verity AI Pipeline
 
-Flow:
+General-purpose chatbot with optional shopping search.
 
-User message
-    ↓
-PII redaction
-    ↓
-ContextLock / AI understanding
-    ↓
-Sticky shopping context
-    ↓
-Strict product search
-    ↓
-Chatbot response
+Flow:
+    User message
+        -> PII redaction
+        -> Decide whether this is a shopping request
+        -> Update shopping context only for shopping turns
+        -> Search products only for shopping turns
+        -> Generate a natural response
+        -> Return chat, privacy, token, and product data
 """
 
 import os
+import re
 import requests
 
 from pii_redactor import redact
@@ -27,78 +25,142 @@ from product_search import search_products
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-MODEL = os.getenv(
-    "GROQ_MODEL",
-    "openai/gpt-oss-120b",
-)
-
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 CONTEXT_LIMIT = int(os.getenv("CONTEXT_LIMIT", "131072"))
 
-# Cost in rupees per 1 million tokens. Adjust to your model's real pricing.
-# Defaults: $0.15 input / $0.60 output at roughly Rs 88 per USD.
+# Cost in rupees per 1 million tokens. Adjust to the model's actual pricing.
 INPUT_COST_INR_PER_M = float(os.getenv("INPUT_COST_INR_PER_M", "13.2"))
 OUTPUT_COST_INR_PER_M = float(os.getenv("OUTPUT_COST_INR_PER_M", "52.8"))
 
 
 BASE_SYSTEM = """
-You are Verity AI, a friendly shopping assistant.
+You are Verity AI, a helpful, friendly, general-purpose AI assistant.
 
-Reply naturally like a real chatbot.
+Chat naturally and respond to what the user actually asks. You can help
+with everyday questions, explanations, learning, writing, brainstorming,
+coding, planning, and general conversation.
 
-Keep replies short: at most 2 short sentences.
+Do not assume every message is about shopping. Do not mention product
+filters, product searches, or shopping context unless it is relevant to
+the user's current request.
 
-Do not use tables.
-
-Do not use markdown.
-
-Do not invent product names or prices.
-
-The application separately displays the actual matching products.
-
-If matching products were found, simply acknowledge the request
-and tell the user that the matching products are shown below.
-
-If no products were found, politely explain that no verified
-matching products were found.
-
-IMPORTANT:
-
-The current shopping context is supplied separately.
-
-Do not override the shopping context yourself.
-
-Do not invent missing product requirements.
+Be clear, useful, and honest. If you are unsure, say so. Ask a concise
+clarifying question when needed. Match the level of detail to the request.
 """
 
 
-def call_llm(system, history, user_message):
-    """Returns (reply_text, usage_dict_or_None)."""
+SHOPPING_SYSTEM = """
+The current message is a shopping request or a follow-up to one.
 
+Use the supplied shopping context when it is relevant. Do not invent
+missing product requirements, product names, prices, or search results.
+
+The application displays verified matching products separately from the
+chat reply. Respond naturally to the user's message. If no verified
+matching products were found, explain that only when relevant; do not
+claim that products were found when the results are empty.
+"""
+
+
+# Explicit phrases are preferred so that ordinary mentions of products
+# do not automatically turn every conversation into shopping.
+SHOPPING_INTENT_PATTERN = re.compile(
+    r"\b("
+    r"find me|find|search for|look for|looking for|shop for|shopping for|"
+    r"buy|purchase|order|recommend|suggest|compare|"
+    r"show me|show|list products|product search|"
+    r"where can i buy|where to buy|"
+    r"price of|cost of|how much is|how much does|"
+    r"under ₹?\s*\d|below ₹?\s*\d|over ₹?\s*\d|above ₹?\s*\d|"
+    r"cheapest|best deal|"
+    r"kurta|saree|sari|t shirt|t-shirt|shirt|jeans|trousers|"
+    r"shoes|sneakers|dress|jacket|coat|laptop|smartphone|mobile phone|"
+    r"headphones|earbuds|smartwatch|watch|handbag|backpack|"
+    r"books|book|chair|sofa|fridge|refrigerator|"
+    r"washing machine|camera|tablet|sunglasses"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# These phrases only count as shopping follow-ups when there is an existing
+# shopping category in ContextLock. This helps "make it shorter" or
+# "tell me more" remain normal conversation.
+SHOPPING_FOLLOWUP_PATTERN = re.compile(
+    r"\b("
+    r"cheaper|more expensive|lower price|higher price|"
+    r"under ₹?\s*\d|below ₹?\s*\d|over ₹?\s*\d|above ₹?\s*\d|"
+    r"show more|more options|other options|similar ones|"
+    r"different color|another color|in red|in blue|"
+    r"change the color|change the size|"
+    r"same brand|another brand|"
+    r"only show|filter by|remove the filter|"
+    r"those products|these products|those ones|these ones"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _has_shopping_category(state):
+    """Return True when ContextLock has a product category."""
+    if not isinstance(state, dict):
+        return False
+    category = state.get("category")
+    return isinstance(category, str) and bool(category.strip())
+
+
+def is_shopping_request(message, shopping_state=None):
+    """
+    Basic shopping-intent detection.
+
+    This is deliberately conservative, not a perfect language classifier.
+    Explicit shopping terms can start a search. Short product queries such
+    as "blue kurta" are also supported when a category word is present.
+    Shopping refinements are recognized only when a prior category exists.
+    """
+    message = (message or "").strip()
+    if not message:
+        return False
+
+    if SHOPPING_INTENT_PATTERN.search(message):
+        return True
+
+    if (
+        _has_shopping_category(shopping_state)
+        and SHOPPING_FOLLOWUP_PATTERN.search(message)
+    ):
+        return True
+
+    # Support compact searches such as "blue kurta" or "Nike shoes"
+    # without requiring the user to type "find" or "show me".
+    category_words = re.compile(
+        r"\b("
+        r"kurta|saree|sari|shirt|jeans|trousers|shoes|sneakers|dress|"
+        r"jacket|coat|laptop|smartphone|headphones|earbuds|smartwatch|"
+        r"watch|handbag|backpack|book|chair|sofa|camera|tablet|"
+        r"sunglasses|fridge|refrigerator|"
+        r"washing machine"
+        r")\b",
+        re.IGNORECASE,
+    )
+    return len(message) <= 100 and bool(category_words.search(message))
+
+
+def call_llm(system, history, user_message):
+    """Return (reply_text, usage_dict_or_None)."""
     key = os.getenv("GROQ_API_KEY")
 
     if not key:
         return (
-            "I understood your request. "
-            "Add GROQ_API_KEY to enable the AI chatbot.",
+            "The chatbot is not connected to the AI service yet. "
+            "Please configure GROQ_API_KEY.",
             None,
         )
 
-    messages = [
-        {
-            "role": "system",
-            "content": system,
-        }
-    ]
-
+    messages = [{"role": "system", "content": system}]
     messages.extend(history)
-
-    messages.append({
-        "role": "user",
-        "content": user_message,
-    })
+    messages.append({"role": "user", "content": user_message})
 
     try:
-
         response = requests.post(
             GROQ_URL,
             headers={
@@ -107,7 +169,7 @@ def call_llm(system, history, user_message):
             },
             json={
                 "model": MODEL,
-                "temperature": 0.3,
+                "temperature": 0.5,
                 "messages": messages,
             },
             timeout=30,
@@ -115,97 +177,79 @@ def call_llm(system, history, user_message):
 
         if response.status_code == 429:
             return (
-                "The AI service is temporarily busy. "
-                "Please try again.",
+                "The AI service is temporarily busy. Please try again.",
                 None,
             )
 
         if response.status_code != 200:
-            return (
-                f"AI service error {response.status_code}.",
-                None,
-            )
+            # Avoid returning provider response bodies, which may contain
+            # implementation details or request information.
+            return f"AI service error ({response.status_code}).", None
 
         data = response.json()
-
         reply = (
-            data["choices"][0]["message"].get("content") or ""
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content")
+            or ""
         ).strip()
 
-        # FIX: some models can return an empty message.
         if not reply:
-            reply = "Here is what I found for you."
+            reply = "Sorry, I couldn't generate a response. Please try again."
 
-        usage = data.get("usage")
+        return reply, data.get("usage")
 
-        return reply, usage
-
-    except Exception:
+    except requests.RequestException:
         return (
-            "I couldn't reach the AI service right now.",
+            "I couldn't reach the AI service right now. Please try again.",
+            None,
+        )
+    except (ValueError, KeyError, IndexError, TypeError):
+        return (
+            "I received an unexpected response from the AI service. "
+            "Please try again.",
             None,
         )
 
 
 def _breakdown_total(breakdown):
-    """
-    token_tracker.py wasn't shared, so read its result defensively.
-    Accepts a number or a dict with a total-like key.
-    """
-
-    if isinstance(breakdown, (int, float)):
+    """Read a token total defensively from different tracker result shapes."""
+    if isinstance(breakdown, (int, float)) and not isinstance(breakdown, bool):
         return int(breakdown)
 
     if isinstance(breakdown, dict):
-
         for key in ("total", "total_tokens", "tokens"):
             value = breakdown.get(key)
-
-            if isinstance(value, (int, float)):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return int(value)
 
         numbers = [
-            v for v in breakdown.values()
-            if isinstance(v, (int, float)) and not isinstance(v, bool)
+            value
+            for value in breakdown.values()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
-
         return int(sum(numbers))
 
     return 0
 
 
 class VerityAI:
-
     def __init__(self):
-
         self.lock = ContextLock()
-
         self.tracker = TokenBudgetTracker()
-
         self.history = []
 
-        # FIX: remember the last search so follow-ups like "thanks"
-        # don't make the product list vanish.
+        # Keep the last search available internally for shopping refinements.
+        # It is returned to the frontend only on shopping turns.
         self.last_products = None
-
         self.session_cost_inr = 0.0
 
-    # -----------------------------------------------------
-    # TOKEN INFO FOR THE DASHBOARD
-    # -----------------------------------------------------
-
     def _build_tokens(self, after, usage):
-        """
-        FIX: the frontend reads data.tokens
-        (total, context_limit, usage_percent, cost_inr),
-        but the backend never sent it.
-        """
-
+        """Build token and estimated session-cost information for the UI."""
         if usage:
-            prompt = usage.get("prompt_tokens") or 0
-            completion = usage.get("completion_tokens") or 0
-
-            total = usage.get("total_tokens") or (prompt + completion)
+            prompt = int(usage.get("prompt_tokens") or 0)
+            completion = int(usage.get("completion_tokens") or 0)
+            total = int(usage.get("total_tokens") or (prompt + completion))
 
             self.session_cost_inr += (
                 prompt * INPUT_COST_INR_PER_M / 1_000_000
@@ -223,87 +267,77 @@ class VerityAI:
             "cost_inr": round(self.session_cost_inr, 6),
         }
 
-    # -----------------------------------------------------
-    # MAIN ENTRY
-    # -----------------------------------------------------
-
     def handle(self, raw_message):
+        """Process one user message and return the response payload."""
+        if not isinstance(raw_message, str):
+            raw_message = ""
 
-        # -------------------------------------------------
-        # 1. Protect PII
-        # -------------------------------------------------
+        # 1. Redact sensitive data before intent detection, context updates,
+        # token tracking, conversation history, or sending text to the LLM.
+        safe_message, pii_found = redact(raw_message)
 
-        safe_message, pii_found = redact(
-            raw_message
+        # 2. Decide whether this message belongs to a shopping interaction.
+        # Inspect existing state before updating it, so ordinary chat does not
+        # accidentally change persistent product filters.
+        shopping_request = is_shopping_request(
+            safe_message,
+            self.lock.state,
         )
 
-        # -------------------------------------------------
-        # 2. Understand the latest message
-        # -------------------------------------------------
+        filter_changes = []
 
-        self.lock.update(
-            safe_message
-        )
+        # 3. Only update ContextLock and search products for shopping turns.
+        if shopping_request:
+            self.lock.update(safe_message)
+            filter_changes = list(self.lock.changes or [])
 
-        # -------------------------------------------------
-        # 3. Search using CURRENT complete context
-        # -------------------------------------------------
+            # Search on each shopping turn so refinements can refresh results.
+            self.last_products = search_products(self.lock.state)
+            products = self.last_products
+        else:
+            # Do not expose stale products as results for unrelated chat.
+            products = None
 
-        if self.lock.changes:
-            self.last_products = search_products(
-                self.lock.state
-            )
-
-        products = self.last_products
-
-        # -------------------------------------------------
-        # 4. Build chatbot context
-        # -------------------------------------------------
-
+        # 4. Build a general-purpose prompt. Add shopping instructions and
+        # filters only while handling a shopping request.
         system = BASE_SYSTEM
 
-        context_prompt = self.lock.to_prompt()
+        if shopping_request:
+            system += "\n\n" + SHOPPING_SYSTEM
+            context_prompt = self.lock.to_prompt()
+            if context_prompt:
+                system += "\n\nCurrent shopping context:\n" + context_prompt
 
-        if context_prompt:
-            system += "\n\n" + context_prompt
+            if products is not None:
+                item_count = len(products.get("items", []))
+                if item_count:
+                    system += (
+                        f"\n\nSearch status: {item_count} verified matching "
+                        "product(s) are included in the response payload and "
+                        "may be displayed separately by the application."
+                    )
+                else:
+                    note = products.get("note", "")
+                    system += (
+                        "\n\nSearch status: no verified matching products "
+                        "were returned."
+                    )
+                    if note:
+                        system += "\nSearch note: " + str(note)
 
-        # FIX: the chatbot was never told whether products were found,
-        # yet its instructions depend on it.
-        if products is not None:
-
-            if products.get("items"):
-                system += (
-                    "\n\nSearch result: "
-                    f"{len(products['items'])} verified matching products "
-                    "were found and are displayed below the chat."
-                )
-            else:
-                system += (
-                    "\n\nSearch result: no verified matching products "
-                    "were found."
-                )
-
-        # -------------------------------------------------
-        # 5. Token tracking
-        # -------------------------------------------------
-
+        # 5. Token tracking.
         before = self.tracker.breakdown(
             system,
             self.history,
             safe_message,
         )
-
         warnings = self.tracker.find_waste(
             system,
             self.history,
             before,
         )
 
-        self.history = (
-            self.tracker.compress_history(
-                self.history
-            )
-        )
+        self.history = self.tracker.compress_history(self.history)
 
         after = self.tracker.breakdown(
             system,
@@ -311,63 +345,27 @@ class VerityAI:
             safe_message,
         )
 
-        # -------------------------------------------------
-        # 6. Generate natural chatbot response
-        # -------------------------------------------------
+        # 6. Generate a natural reply for both general chat and shopping.
+        reply, usage = call_llm(system, self.history, safe_message)
 
-        # FIX: call_llm returns (reply, usage). Before, the whole tuple
-        # was stored in history, which broke the next API call.
-        reply, usage = call_llm(
-            system,
-            self.history,
-            safe_message,
-        )
+        # 7. Save only redacted user text and the assistant response.
+        self.history.append({"role": "user", "content": safe_message})
+        self.history.append({"role": "assistant", "content": reply})
 
-        # -------------------------------------------------
-        # 7. Save conversation
-        # -------------------------------------------------
-
-        self.history.append({
-            "role": "user",
-            "content": safe_message,
-        })
-
-        self.history.append({
-            "role": "assistant",
-            "content": reply,
-        })
-
-        # -------------------------------------------------
-        # 8. Send everything to frontend
-        # -------------------------------------------------
-
+        # 8. Return fields expected by the existing dashboard/frontend.
         return {
             "reply": reply,
-
             "safe_message": safe_message,
-
             "pii_found": [
-                {
-                    "type": p["type"]
-                }
-                for p in pii_found
+                {"type": item.get("type", "unknown")}
+                for item in (pii_found or [])
             ],
-
-            "filters": dict(
-                self.lock.state
-            ),
-
-            "filter_changes": list(
-                self.lock.changes
-            ),
-
+            "filters": dict(self.lock.state),
+            "filter_changes": filter_changes,
+            "shopping_active": shopping_request,
             "tokens": self._build_tokens(after, usage),
-
             "tokens_before": before,
-
             "tokens_after": after,
-
             "waste_warnings": warnings,
-
             "products": products,
         }
