@@ -1,194 +1,249 @@
 /* =========================================================
-   VERITY AI — Main JavaScript
-   Compatible with Flask routes:
-   POST /chat and POST /analyze
+   VERITY AI — Main JavaScript (corrected)
+   Flask routes: POST /chat and POST /analyze
    ========================================================= */
 
 "use strict";
 
 /* ----------------------------- Global state ----------------------------- */
 
-var chatId = Math.random().toString(36).substring(2);
+var chatId = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Math.random().toString(36).substring(2);
+
 var refinementTimer = null;
 var refinementRequestId = 0;
 var isSending = false;
+
+var MAX_TOKENS = 131072;
+var CURRENCY = "₹";
 var EMPTY_REFINED = "Start typing a prompt...";
+var REFINE_STATES = [
+    EMPTY_REFINED,
+    "REFINING...",
+    "No refinement suggestion available.",
+    "Prompt refinement is temporarily unavailable."
+];
+
+/* ----------------------------- Helpers ---------------------------------- */
+
+function $(id) { return document.getElementById(id); }
+
+function isChecked(id, fallback) {
+    var el = $(id);
+    return el ? el.checked : fallback;
+}
+
+function getToggles() {
+    return {
+        pii_protection: isChecked("piiToggle", true),
+        context_lock: isChecked("contextToggle", true),
+        token_manager: isChecked("tokenToggle", true)
+    };
+}
 
 /* ----------------------------- DOM ready -------------------------------- */
 
 document.addEventListener("DOMContentLoaded", function () {
+    setupSanitizer();
     setupInput();
-    setupExamplePrompts();
-    setupCharacterCounter();
+    setupClicks();
     setupDashboardResponsiveBehavior();
+    updateCharacterCounter();
 });
+
+/* Make links in rendered markdown safe */
+function setupSanitizer() {
+    if (!window.DOMPurify) return;
+    DOMPurify.addHook("afterSanitizeAttributes", function (node) {
+        if (node.tagName === "A") {
+            node.setAttribute("target", "_blank");
+            node.setAttribute("rel", "noopener noreferrer");
+        }
+    });
+}
 
 /* ----------------------------- Input setup ------------------------------ */
 
 function setupInput() {
-    var input = document.getElementById("msg");
-    var sendButton = document.getElementById("sendBtn");
+    var input = $("msg");
+    var form = $("chatForm");
+
+    if (form) {
+        // Single send path: form submit (covers button click too).
+        form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            sendMessage();
+        });
+    }
 
     if (input) {
         input.addEventListener("input", function () {
-            schedulePromptRefinement();
+            autoResize(input);
             updateCharacterCounter();
+            schedulePromptRefinement();
         });
 
         input.addEventListener("keydown", function (event) {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
                 event.preventDefault();
                 sendMessage();
             }
         });
     }
+}
 
-    if (sendButton) {
-        sendButton.addEventListener("click", sendMessage);
-    }
+function autoResize(el) {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 130) + "px";
+}
+
+/* One delegated click handler for all data-action / data-prompt buttons */
+function setupClicks() {
+    document.addEventListener("click", function (event) {
+        var promptEl = event.target.closest("[data-prompt]");
+        if (promptEl) {
+            setInputValue(promptEl.getAttribute("data-prompt"));
+            return;
+        }
+
+        var actionEl = event.target.closest("[data-action]");
+        if (!actionEl) return;
+
+        switch (actionEl.getAttribute("data-action")) {
+            case "new-chat":
+                window.location.reload();
+                break;
+            case "scroll-chat":
+                var chat = $("chat");
+                if (chat) chat.scrollIntoView({ behavior: "smooth" });
+                break;
+            case "focus-input":
+                if ($("msg")) $("msg").focus();
+                break;
+            case "toggle-dashboard":
+                toggleDashboard();
+                break;
+            case "close-dashboard":
+                closeDashboard();
+                break;
+        }
+    });
+
+    var refinedBtn = $("useRefinedPrompt");
+    if (refinedBtn) refinedBtn.addEventListener("click", useRefinedPrompt);
+}
+
+function setInputValue(text) {
+    var input = $("msg");
+    if (!input) return;
+    input.value = text || "";
+    autoResize(input);
+    input.focus();
+    updateCharacterCounter();
+    schedulePromptRefinement();
 }
 
 /* ----------------------------- Prompt refinement ------------------------ */
 
 function schedulePromptRefinement() {
     clearTimeout(refinementTimer);
-
-    refinementTimer = setTimeout(function () {
-        refinePrompt();
-    }, 800);
+    refinementTimer = setTimeout(refinePrompt, 800);
 }
 
 async function refinePrompt() {
-    var input = document.getElementById("msg");
-    var refinedBox = document.getElementById("refinedPrompt");
-
+    var input = $("msg");
+    var refinedBox = $("refinedPrompt");
     if (!input || !refinedBox) return;
 
     var text = input.value.trim();
 
     if (!text) {
         refinementRequestId++;
-        refinedBox.innerText = EMPTY_REFINED;
+        refinedBox.textContent = EMPTY_REFINED;
         return;
     }
 
-    // Mask obvious personal information before sending to /analyze.
-    var safeForAnalysis = maskPIIForAnalysis(text);
     var requestId = ++refinementRequestId;
-
-    refinedBox.innerText = "REFINING...";
+    refinedBox.textContent = "REFINING...";
 
     try {
         var response = await fetch("/analyze", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                message: safeForAnalysis
-            })
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(Object.assign(
+                { message: maskPIIForAnalysis(text) },
+                getToggles()
+            ))
         });
 
-        if (!response.ok) {
-            throw new Error("Prompt refinement failed: " + response.status);
-        }
+        if (!response.ok) throw new Error("Prompt refinement failed: " + response.status);
 
         var data = await response.json();
+        if (requestId !== refinementRequestId) return; // stale
 
-        // Ignore stale responses from earlier prompts.
-        if (requestId !== refinementRequestId) return;
+        // Don't fall back to data.message / data.prompt — those aren't refinements.
+        var refined = data.refined_prompt || data.refinedPrompt || data.refined;
 
-        var refined =
-            data.refined_prompt ||
-            data.refinedPrompt ||
-            data.refined ||
-            data.prompt ||
-            data.message;
-
-        refinedBox.innerText =
+        refinedBox.textContent =
             typeof refined === "string" && refined.trim()
                 ? refined
                 : "No refinement suggestion available.";
 
-        updateDashboard(data);
+        // Update everything except the refined box (already set above).
+        updateDashboard(data, { skipRefined: true });
     } catch (error) {
         if (requestId !== refinementRequestId) return;
-
-        refinedBox.innerText = "Prompt refinement is temporarily unavailable.";
+        refinedBox.textContent = "Prompt refinement is temporarily unavailable.";
         console.error("Prompt refinement error:", error);
     }
 }
 
-/* ----------------------------- Use refined prompt ----------------------- */
+function useRefinedPrompt() {
+    var refinedBox = $("refinedPrompt");
+    if (!refinedBox) return;
 
-function setupRefinedPromptButton() {
-    var button = document.getElementById("useRefinedPrompt");
-    if (!button) return;
+    var refined = refinedBox.textContent.trim();
+    if (!refined || REFINE_STATES.indexOf(refined) !== -1) return;
 
-    button.addEventListener("click", function () {
-        var input = document.getElementById("msg");
-        var refinedBox = document.getElementById("refinedPrompt");
-
-        if (!input || !refinedBox) return;
-
-        var refined = refinedBox.innerText.trim();
-
-        if (
-            refined &&
-            refined !== EMPTY_REFINED &&
-            refined !== "REFINING..." &&
-            refined !== "No refinement suggestion available." &&
-            refined !== "Prompt refinement is temporarily unavailable."
-        ) {
-            input.value = refined;
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.focus();
-            updateCharacterCounter();
-        }
-    });
+    setInputValue(refined);
 }
 
 /* ----------------------------- PII masking ------------------------------ */
 
 function maskPIIForAnalysis(text) {
     if (!text) return "";
-
     var masked = String(text);
 
-    // Email addresses.
+    // Email
     masked = masked.replace(
         /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
         "[EMAIL REDACTED]"
     );
 
-    // Indian PAN.
-    masked = masked.replace(
-        /\b[A-Z]{5}[0-9]{4}[A-Z]\b/gi,
-        "[PAN REDACTED]"
-    );
+    // Indian PAN
+    masked = masked.replace(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/gi, "[PAN REDACTED]");
 
-    // Aadhaar-like 12 digit numbers.
+    // Cards FIRST (Luhn-valid only) so phone/Aadhaar rules can't chew into them.
     masked = masked.replace(
-        /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g,
-        "[ID NUMBER REDACTED]"
-    );
-
-    // Indian phone numbers.
-    masked = masked.replace(
-        /(?:\+91[\s-]?)?[6-9]\d{9}\b/g,
-        "[PHONE REDACTED]"
-    );
-
-    // Card-like number sequences: mask only if Luhn-valid.
-    masked = masked.replace(
-        /\b(?:\d[ -]?){13,19}\b/g,
+        /(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g,
         function (candidate) {
-            var digits = candidate.replace(/\D/g, "");
-
-            return isLuhnValid(digits)
+            return isLuhnValid(candidate.replace(/\D/g, ""))
                 ? "[CARD NUMBER REDACTED]"
                 : candidate;
         }
+    );
+
+    // Aadhaar-like 12 digits (first digit 2-9), exact boundaries.
+    masked = masked.replace(
+        /(?<!\d)[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?!\d)/g,
+        "[ID NUMBER REDACTED]"
+    );
+
+    // Indian mobile numbers, exact boundaries (won't match inside longer numbers).
+    masked = masked.replace(
+        /(?<![\d+])(?:\+91[\s-]?)?[6-9]\d{9}(?!\d)/g,
+        "[PHONE REDACTED]"
     );
 
     return masked;
@@ -202,24 +257,21 @@ function isLuhnValid(number) {
 
     for (var i = number.length - 1; i >= 0; i--) {
         var digit = parseInt(number.charAt(i), 10);
-
         if (doubleDigit) {
             digit *= 2;
             if (digit > 9) digit -= 9;
         }
-
         sum += digit;
         doubleDigit = !doubleDigit;
     }
-
     return sum % 10 === 0;
 }
 
 /* ----------------------------- Send chat message ------------------------ */
 
 async function sendMessage() {
-    var input = document.getElementById("msg");
-    var sendButton = document.getElementById("sendBtn");
+    var input = $("msg");
+    var sendButton = $("sendBtn");
 
     if (!input || isSending) return;
 
@@ -227,43 +279,40 @@ async function sendMessage() {
     if (!message) return;
 
     isSending = true;
-
     if (sendButton) {
         sendButton.disabled = true;
         sendButton.classList.add("loading");
     }
 
-    // Prevent pending analysis from overwriting the latest UI.
     clearTimeout(refinementTimer);
     refinementRequestId++;
 
-    // Mask PII before displaying the user's message in the chat.
-    var safeMessage = maskPIIForAnalysis(message);
+    hideWelcome();
 
+    var safeMessage = maskPIIForAnalysis(message);
     addMessage(safeMessage, "user");
 
     input.value = "";
+    autoResize(input);
     updateCharacterCounter();
 
-    var refinedBox = document.getElementById("refinedPrompt");
-    if (refinedBox) refinedBox.innerText = EMPTY_REFINED;
+    var refinedBox = $("refinedPrompt");
+    if (refinedBox) refinedBox.textContent = EMPTY_REFINED;
 
+    setText("activityStatus", "Processing…");
     showTypingIndicator();
 
     try {
         var response = await fetch("/chat", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                message: message,
-                chat_id: chatId
-            })
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(Object.assign(
+                { message: message, chat_id: chatId },
+                getToggles()
+            ))
         });
 
         var data;
-
         try {
             data = await response.json();
         } catch (_) {
@@ -274,106 +323,94 @@ async function sendMessage() {
 
         if (!response.ok) {
             throw new Error(
-                data.error ||
-                data.message ||
-                "Request failed with status " + response.status
+                data.error || data.message || "Request failed with status " + response.status
             );
         }
 
-        // Prefer the backend's redacted safe message when provided.
-        var visibleUserMessage =
-            data.safe_message ||
-            data.redacted_message ||
-            safeMessage;
-
-        updateLastUserMessage(visibleUserMessage);
+        updateLastUserMessage(data.safe_message || data.redacted_message || safeMessage);
 
         var answer =
-            data.response ||
-            data.answer ||
-            data.reply ||
-            data.assistant_message ||
-            data.message;
+            data.response || data.answer || data.reply || data.assistant_message || data.message;
 
         if (typeof answer !== "string" || !answer.trim()) {
             answer = "I couldn't generate a response. Please try again.";
         }
 
-        addMessage(answer, "assistant");
+        addMessage(answer, "bot");
 
         updateDashboard(data);
         renderProducts(data.products || data.results || []);
+        setText("activityStatus", "Ready");
 
     } catch (error) {
         removeTypingIndicator();
-
         addMessage(
-            "Sorry, I couldn't complete that request. " +
-            "Please check your connection and try again.",
-            "assistant"
+            "Sorry, I couldn't complete that request. Please check your connection and try again.",
+            "bot"
         );
-
+        setText("activityStatus", "Last request failed");
         console.error("Chat error:", error);
     } finally {
         isSending = false;
-
         if (sendButton) {
             sendButton.disabled = false;
             sendButton.classList.remove("loading");
         }
-
-        if (input) input.focus();
+        input.focus();
     }
 }
 
+function hideWelcome() {
+    var panel = $("welcomePanel");
+    if (panel) panel.hidden = true;
+
+    var initial = document.querySelector("#chat .initial-message");
+    if (initial) initial.remove();
+}
+
 /* ----------------------------- Chat rendering --------------------------- */
+/* NOTE: CSS targets ".message.user" and ".message.bot" with ".message-bubble". */
 
 function addMessage(message, role) {
-    var chat = document.getElementById("chat");
-    if (!chat) return;
+    var chat = $("chat");
+    if (!chat) return null;
+
+    if (role === "assistant") role = "bot"; // backwards-compat
 
     var wrapper = document.createElement("div");
     wrapper.className = "message " + role;
 
-    var content = document.createElement("div");
-    content.className = "message-content";
+    var bubble = document.createElement("div");
+    bubble.className = "message-bubble";
 
-    var safeText = String(message == null ? "" : message);
+    var text = String(message == null ? "" : message);
 
-    if (role === "assistant" && window.marked && window.DOMPurify) {
+    if (role === "bot" && window.marked && window.DOMPurify) {
         try {
-            content.innerHTML = DOMPurify.sanitize(
-                marked.parse(safeText)
-            );
+            bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
         } catch (error) {
-            content.textContent = safeText;
+            bubble.textContent = text;
         }
     } else {
-        content.textContent = safeText;
+        bubble.textContent = text;
     }
 
-    wrapper.appendChild(content);
+    wrapper.appendChild(bubble);
     chat.appendChild(wrapper);
-
     chat.scrollTop = chat.scrollHeight;
 
     return wrapper;
 }
 
 function updateLastUserMessage(message) {
-    var chat = document.getElementById("chat");
+    var chat = $("chat");
     if (!chat) return;
 
     var userMessages = chat.querySelectorAll(".message.user");
     if (!userMessages.length) return;
 
-    var lastMessage = userMessages[userMessages.length - 1];
-    var content = lastMessage.querySelector(".message-content");
-
-    if (content) {
-        // Use textContent to avoid rendering untrusted HTML.
-        content.textContent = String(message || "");
-    }
+    var bubble = userMessages[userMessages.length - 1].querySelector(".message-bubble");
+    if (bubble) bubble.textContent = String(message || "");
 }
 
 /* ----------------------------- Typing indicator ------------------------- */
@@ -381,43 +418,40 @@ function updateLastUserMessage(message) {
 function showTypingIndicator() {
     removeTypingIndicator();
 
-    var chat = document.getElementById("chat");
+    var chat = $("chat");
     if (!chat) return;
 
     var indicator = document.createElement("div");
     indicator.id = "typingIndicator";
-    indicator.className = "message assistant typing-indicator";
+    indicator.className = "message bot typing-indicator";
 
-    var content = document.createElement("div");
-    content.className = "message-content";
-    content.textContent = "Verity AI is thinking…";
+    var bubble = document.createElement("div");
+    bubble.className = "message-bubble";
+    bubble.textContent = "Verity AI is thinking…";
 
-    indicator.appendChild(content);
+    indicator.appendChild(bubble);
     chat.appendChild(indicator);
     chat.scrollTop = chat.scrollHeight;
 }
 
 function removeTypingIndicator() {
-    var indicator = document.getElementById("typingIndicator");
+    var indicator = $("typingIndicator");
     if (indicator) indicator.remove();
 }
 
 /* ----------------------------- Product rendering ------------------------ */
 
 function renderProducts(products) {
-    var section = document.getElementById("productsSection");
-    var container = document.getElementById("products");
-
+    var section = $("productsSection");
+    var container = $("products");
     if (!section || !container) return;
 
     container.replaceChildren();
 
     if (!Array.isArray(products) || products.length === 0) {
-        section.style.display = "none";
+        section.hidden = true;
         return;
     }
-
-    section.style.display = "";
 
     products.forEach(function (product) {
         if (!product || typeof product !== "object") return;
@@ -425,39 +459,11 @@ function renderProducts(products) {
         var card = document.createElement("article");
         card.className = "product-card";
 
-        var title = String(
-            product.title ||
-            product.name ||
-            product.product_name ||
-            "Product"
-        );
-
-        var price = String(
-            product.price ||
-            product.displayed_price ||
-            product.cost ||
-            ""
-        );
-
-        var description = String(
-            product.description ||
-            product.summary ||
-            ""
-        );
-
-        var imageUrl = safeHttpUrl(
-            product.image ||
-            product.image_url ||
-            product.thumbnail ||
-            ""
-        );
-
-        var productUrl = safeHttpUrl(
-            product.url ||
-            product.link ||
-            product.product_url ||
-            ""
-        );
+        var title = String(product.title || product.name || product.product_name || "Product");
+        var price = String(product.price || product.displayed_price || product.cost || "");
+        var description = String(product.description || product.summary || "");
+        var imageUrl = safeHttpUrl(product.image || product.image_url || product.thumbnail || "");
+        var productUrl = safeHttpUrl(product.url || product.link || product.product_url || "");
 
         if (imageUrl) {
             var imageContainer = document.createElement("div");
@@ -468,10 +474,7 @@ function renderProducts(products) {
             image.alt = title;
             image.loading = "lazy";
             image.referrerPolicy = "no-referrer";
-
-            image.addEventListener("error", function () {
-                imageContainer.remove();
-            });
+            image.addEventListener("error", function () { imageContainer.remove(); });
 
             imageContainer.appendChild(image);
             card.appendChild(imageContainer);
@@ -486,17 +489,17 @@ function renderProducts(products) {
         details.appendChild(heading);
 
         if (price) {
-            var priceElement = document.createElement("p");
-            priceElement.className = "product-price";
-            priceElement.textContent = price;
-            details.appendChild(priceElement);
+            var priceEl = document.createElement("p");
+            priceEl.className = "product-price";
+            priceEl.textContent = price;
+            details.appendChild(priceEl);
         }
 
         if (description) {
-            var descriptionElement = document.createElement("p");
-            descriptionElement.className = "product-description";
-            descriptionElement.textContent = description;
-            details.appendChild(descriptionElement);
+            var descEl = document.createElement("p");
+            descEl.className = "product-description";
+            descEl.textContent = description;
+            details.appendChild(descEl);
         }
 
         if (productUrl) {
@@ -513,22 +516,14 @@ function renderProducts(products) {
         container.appendChild(card);
     });
 
-    if (!container.children.length) {
-        section.style.display = "none";
-    }
+    section.hidden = container.children.length === 0;
 }
 
 function safeHttpUrl(value) {
     if (!value || typeof value !== "string") return "";
-
     try {
         var parsed = new URL(value, window.location.origin);
-
-        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-            return "";
-        }
-
-        return parsed.href;
+        return (parsed.protocol === "https:" || parsed.protocol === "http:") ? parsed.href : "";
     } catch (_) {
         return "";
     }
@@ -536,274 +531,164 @@ function safeHttpUrl(value) {
 
 /* ----------------------------- Dashboard updates ------------------------ */
 
-function updateDashboard(data) {
+function updateDashboard(data, options) {
     if (!data || typeof data !== "object") return;
+    options = options || {};
 
     setTextIfPresent("memory", firstDefined(
-        data.memory,
-        data.memory_status,
-        data.context,
-        data.context_status
+        data.memory, data.memory_status, data.context, data.context_status
     ));
 
+    /* Tokens */
     var tokenValue = firstNumeric(
-        data.tokens,
-        data.total_tokens,
-        data.token_count,
+        data.tokens, data.total_tokens, data.token_count,
         data.usage && data.usage.total_tokens
     );
 
-    if (tokenValue !== null) {
-        setTextIfPresent("tokens", formatNumber(tokenValue));
-    }
-
-    var costValue = firstNumeric(
-        data.token_cost,
-        data.cost,
-        data.estimated_cost,
-        data.usage && data.usage.cost
-    );
-
-    if (costValue !== null) {
-        setTextIfPresent("tokenCost", "$" + costValue.toFixed(6));
-    }
-
-    var piiValue = firstDefined(
-        data.pii,
-        data.pii_redacted,
-        data.redactions,
-        data.pii_count
-    );
-
-    if (piiValue !== undefined) {
-        setTextIfPresent(
-            "pii",
-            typeof piiValue === "boolean"
-                ? (piiValue ? "Protected" : "None detected")
-                : String(piiValue)
-        );
-    }
-
-    var warningValue = firstDefined(
-        data.warn,
-        data.warning,
-        data.warnings
-    );
-
-    if (warningValue !== undefined) {
-        setTextIfPresent(
-            "warn",
-            Array.isArray(warningValue)
-                ? warningValue.join(", ")
-                : String(warningValue)
-        );
-    }
-
-    var filterValue = firstDefined(
-        data.filter_changes,
-        data.filterChanges,
-        data.contextlock_changes,
-        data.filters_applied
-    );
-
-    if (filterValue !== undefined) {
-        setTextIfPresent(
-            "filterChanges",
-            Array.isArray(filterValue)
-                ? filterValue.join(", ")
-                : String(filterValue)
-        );
-    }
-
-    var refinedValue = firstDefined(
-        data.refined_prompt,
-        data.refinedPrompt,
-        data.refined
-    );
-
-    if (typeof refinedValue === "string" && refinedValue.trim()) {
-        setTextIfPresent("refinedPrompt", refinedValue);
-    }
-
     var tokenPercent = firstNumeric(
-        data.token_percent,
-        data.tokenPercent,
-        data.token_percentage,
+        data.token_percent, data.tokenPercent, data.token_percentage,
         data.usage && data.usage.percent
     );
 
+    if (tokenPercent === null && tokenValue !== null) {
+        tokenPercent = (tokenValue / MAX_TOKENS) * 100;
+    }
+
+    if (tokenValue !== null) {
+        setText("tokens", formatNumber(tokenValue) + " / " + formatNumber(MAX_TOKENS));
+        setText("activityTokens", formatNumber(tokenValue) + " tokens used");
+    }
+
     if (tokenPercent !== null) {
         tokenPercent = Math.max(0, Math.min(100, tokenPercent));
+        setText("tokenPercent", Math.round(tokenPercent) + "%");
 
-        setTextIfPresent("tokenPercent", tokenPercent.toFixed(0) + "%");
+        var circle = $("tokenCircle");
+        // CSS conic-gradient reads --usage; don't overwrite background inline.
+        if (circle) circle.style.setProperty("--usage", tokenPercent + "%");
 
-        var circle = document.getElementById("tokenCircle");
-        if (circle) {
-            circle.style.setProperty("--token-percent", tokenPercent + "%");
-            circle.style.background =
-                "conic-gradient(#8b5cf6 " +
-                tokenPercent +
-                "%, rgba(255,255,255,.08) 0)";
+        var bar = $("tokenProgress");
+        if (bar) bar.style.width = tokenPercent + "%";
+    }
+
+    var costValue = firstNumeric(
+        data.token_cost, data.cost, data.estimated_cost,
+        data.usage && data.usage.cost
+    );
+    if (costValue !== null) {
+        setText("tokenCost", CURRENCY + costValue.toFixed(6));
+    }
+
+    /* PII */
+    var piiValue = firstDefined(data.pii, data.pii_redacted, data.redactions, data.pii_count);
+    if (piiValue !== undefined) {
+        var piiText = typeof piiValue === "boolean"
+            ? (piiValue ? "Protected" : "None detected")
+            : (typeof piiValue === "object" ? JSON.stringify(piiValue) : String(piiValue));
+        setText("pii", piiText);
+        setText("activityPii", piiText);
+    }
+
+    /* Warnings */
+    var warningValue = firstDefined(data.warn, data.warning, data.warnings);
+    if (warningValue !== undefined) {
+        setText("warn", Array.isArray(warningValue) ? warningValue.join(", ") : String(warningValue));
+    }
+
+    /* Filter changes */
+    var filterValue = firstDefined(
+        data.filter_changes, data.filterChanges, data.contextlock_changes, data.filters_applied
+    );
+    if (filterValue !== undefined) {
+        setText("filterChanges", Array.isArray(filterValue) ? filterValue.join(", ") : String(filterValue));
+    }
+
+    /* Refined prompt */
+    if (!options.skipRefined) {
+        var refinedValue = firstDefined(data.refined_prompt, data.refinedPrompt, data.refined);
+        if (typeof refinedValue === "string" && refinedValue.trim()) {
+            setText("refinedPrompt", refinedValue);
         }
     }
+}
+
+function setText(id, value) {
+    var el = $(id);
+    if (el) el.textContent = String(value);
 }
 
 function setTextIfPresent(id, value) {
     if (value === undefined || value === null) return;
-
-    var element = document.getElementById(id);
-    if (element) element.textContent = String(value);
+    setText(id, typeof value === "object" ? JSON.stringify(value) : value);
 }
 
 function firstDefined() {
     for (var i = 0; i < arguments.length; i++) {
-        if (
-            arguments[i] !== undefined &&
-            arguments[i] !== null &&
-            arguments[i] !== ""
-        ) {
-            return arguments[i];
-        }
+        var v = arguments[i];
+        if (v !== undefined && v !== null && v !== "") return v;
     }
-
     return undefined;
 }
 
 function firstNumeric() {
     for (var i = 0; i < arguments.length; i++) {
-        if (arguments[i] === null || arguments[i] === undefined || arguments[i] === "") {
-            continue;
-        }
-
-        var value = Number(arguments[i]);
-
-        if (Number.isFinite(value)) return value;
+        var v = arguments[i];
+        if (v === null || v === undefined || v === "") continue;
+        var n = Number(v);
+        if (Number.isFinite(n)) return n;
     }
-
     return null;
 }
 
 function formatNumber(number) {
     var value = Number(number);
     if (!Number.isFinite(value)) return "0";
-
     return Math.round(value).toLocaleString("en-IN");
 }
 
 /* ----------------------------- Dashboard drawer ------------------------- */
 
 function setupDashboardResponsiveBehavior() {
-    var dashboard = document.getElementById("dashboard");
-    var overlay = document.getElementById("dashboardOverlay");
-
-    /*
-     * Important:
-     * Do NOT add another click handler to #dashboardBtn here.
-     * Your HTML already uses onclick="toggleDashboard()".
-     * Registering both handlers can toggle the drawer twice.
-     */
-
-    if (overlay) {
-        overlay.addEventListener("click", closeDashboard);
-    }
+    var overlay = $("dashboardOverlay");
+    if (overlay) overlay.addEventListener("click", closeDashboard);
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape") closeDashboard();
     });
 
     window.addEventListener("resize", function () {
-        if (window.matchMedia("(min-width: 1251px)").matches) {
-            closeDashboard();
-        }
+        if (window.matchMedia("(min-width: 1251px)").matches) closeDashboard();
     });
-
-    if (dashboard && window.matchMedia("(min-width: 1251px)").matches) {
-        dashboard.classList.remove("open");
-    }
-
-    setupRefinedPromptButton();
 }
 
 function openDashboard() {
-    var dashboard = document.getElementById("dashboard");
-    var overlay = document.getElementById("dashboardOverlay");
-
+    var dashboard = $("dashboard");
+    var overlay = $("dashboardOverlay");
     if (dashboard) dashboard.classList.add("open");
     if (overlay) overlay.classList.add("active");
 }
 
 function closeDashboard() {
-    var dashboard = document.getElementById("dashboard");
-    var overlay = document.getElementById("dashboardOverlay");
-
+    var dashboard = $("dashboard");
+    var overlay = $("dashboardOverlay");
     if (dashboard) dashboard.classList.remove("open");
     if (overlay) overlay.classList.remove("active");
 }
 
 function toggleDashboard() {
-    var dashboard = document.getElementById("dashboard");
-
+    var dashboard = $("dashboard");
     if (!dashboard) return;
-
-    if (dashboard.classList.contains("open")) {
-        closeDashboard();
-    } else {
-        openDashboard();
-    }
-}
-
-/* ----------------------------- Example prompts -------------------------- */
-
-function setupExamplePrompts() {
-    var examples = document.querySelectorAll(
-        "[data-prompt], .example-prompt, .prompt-suggestion"
-    );
-
-    examples.forEach(function (element) {
-        element.addEventListener("click", function () {
-            var input = document.getElementById("msg");
-            if (!input) return;
-
-            var prompt =
-                element.getAttribute("data-prompt") ||
-                element.textContent.trim();
-
-            if (!prompt) return;
-
-            input.value = prompt;
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.focus();
-            updateCharacterCounter();
-        });
-    });
+    if (dashboard.classList.contains("open")) closeDashboard();
+    else openDashboard();
 }
 
 /* ----------------------------- Character counter ------------------------ */
 
-function setupCharacterCounter() {
-    updateCharacterCounter();
-}
-
 function updateCharacterCounter() {
-    var input = document.getElementById("msg");
-    var counter = document.getElementById("characterCount");
-
-    if (!counter) counter = document.getElementById("charCount");
-
+    var input = $("msg");
+    var counter = $("composerCounter");
     if (!input || !counter) return;
 
-    counter.textContent = input.value.length.toLocaleString("en-IN");
-}
-
-/* ----------------------------- HTML escaping utility -------------------- */
-
-function escapeHtml(value) {
-    if (value === null || value === undefined) return "";
-
-    var div = document.createElement("div");
-    div.textContent = String(value);
-
-    return div.innerHTML
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+    var length = input.value.length;
+    counter.textContent = length ? length.toLocaleString("en-IN") + " characters" : "Ready";
 }
