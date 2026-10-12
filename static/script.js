@@ -588,48 +588,41 @@ async function sendMessage() {
    ADD CHAT MESSAGE
    ========================================================= */
 
-function addMessage(type, text) {
 
-    var chat =
-        document.getElementById("chat");
+function addMessage(type, text) {
+    var chat = document.getElementById("chat");
 
     if (!chat) {
         return null;
     }
 
+    var message = document.createElement("div");
+    message.className = "message " + type;
 
-    var message =
-        document.createElement("div");
+    var bubble = document.createElement("div");
+    bubble.className = "message-bubble";
 
-    message.className =
-        "message " + type;
+    var messageText = String(text || "");
 
+    // Render Markdown only for assistant replies.
+    // User messages remain plain text.
+    if (
+        type === "bot" &&
+        typeof marked !== "undefined" &&
+        typeof DOMPurify !== "undefined"
+    ) {
+        var renderedHtml = marked.parse(messageText);
 
-    var bubble =
-        document.createElement("div");
-
-    bubble.className =
-        "message-bubble";
-
-
-    /*
-     * innerText is intentional.
-     *
-     * It prevents user/API text from being
-     * interpreted as HTML.
-     */
-
-    bubble.innerText = text;
-
+        bubble.innerHTML = DOMPurify.sanitize(renderedHtml);
+    } else {
+        // Safe fallback if Markdown libraries are unavailable.
+        bubble.textContent = messageText;
+    }
 
     message.appendChild(bubble);
-
     chat.appendChild(message);
 
-
-    chat.scrollTop =
-        chat.scrollHeight;
-
+    chat.scrollTop = chat.scrollHeight;
 
     return message;
 }
