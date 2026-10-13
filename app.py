@@ -105,10 +105,11 @@ def chat():
     else:
         safe_message, pii_count = message, 0
 
+  
     try:
-        # Pass both arguments required by VerityAI.handle().
+        # Initialize the AI pipeline instance.
         verity = VerityAI()
-result = verity.handle(safe_message, message)
+        result = verity.handle(safe_message, message)
 
         if isinstance(result, dict):
             answer = (
@@ -120,11 +121,13 @@ result = verity.handle(safe_message, message)
             products = normalize_products(result.get("products", []))
             warnings = result.get("warnings", [])
             waste_warnings = result.get("waste_warnings", [])
+
         elif isinstance(result, str):
             answer = result
             products = []
             warnings = []
             waste_warnings = []
+
         else:
             logger.error(
                 "Unexpected VerityAI.handle result type: %s",
@@ -163,6 +166,7 @@ result = verity.handle(safe_message, message)
         return jsonify({
             "error": "The request could not be processed. Check the server logs."
         }), 500
+
 
 
 @app.route("/health")
