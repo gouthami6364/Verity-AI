@@ -107,7 +107,8 @@ def chat():
 
     try:
         # Pass both arguments required by VerityAI.handle().
-        result = VerityAI.handle(safe_message, message)
+        verity = VerityAI()
+result = verity.handle(safe_message, message)
 
         if isinstance(result, dict):
             answer = (
