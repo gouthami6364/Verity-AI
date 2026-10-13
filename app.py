@@ -109,7 +109,7 @@ def chat():
     try:
         # Initialize the AI pipeline instance.
         verity = VerityAI()
-        result = verity.handle(safe_message, message)
+        result = verity.handle(safe_message)
 
         if isinstance(result, dict):
             answer = (
