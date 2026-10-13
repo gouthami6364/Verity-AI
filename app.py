@@ -1,8 +1,8 @@
 
-from flask import Flask, render_template, request, jsonify
-import re
 import logging
+import re
 
+from flask import Flask, render_template, request, jsonify
 from pipeline import VerityAI
 
 app = Flask(
@@ -24,7 +24,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def redact(text: str):
-    """Redact common types of personal information."""
+    """Basic PII redaction for email, Indian PAN, and Indian phone numbers."""
     count = 0
 
     patterns = [
@@ -49,25 +49,33 @@ def redact(text: str):
     return text, count
 
 
-def error_response(message, status=500):
-    """Return a consistent JSON error response."""
-    return jsonify({
-        "error": message,
-        "response": message,
-        "reply": message,
-        "products": [],
-    }), status
+def normalize_products(products):
+    """Normalize product results for the frontend."""
+    if products is None:
+        return []
+
+    if isinstance(products, list):
+        return products
+
+    if isinstance(products, dict):
+        items = products.get("items")
+        if isinstance(items, list):
+            return items
+
+        # Some pipelines return a single product as a dictionary.
+        if any(key in products for key in ("title", "name", "link", "url")):
+            return [products]
+
+    return []
 
 
 @app.route("/")
 def index():
-    """Render the main application page."""
     return render_template("index.html")
 
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    """Return a refined version of the supplied prompt."""
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
 
@@ -84,7 +92,6 @@ def analyze():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    """Process messages using VerityAI and preserve the API response format."""
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
 
@@ -99,53 +106,35 @@ def chat():
         safe_message, pii_count = message, 0
 
     try:
-        # Call your existing AI pipeline instead of returning a demo echo.
-        result = VerityAI.handle(safe_message)
+        # Pass both arguments required by VerityAI.handle().
+        result = VerityAI.handle(safe_message, message)
 
-        # Support pipelines that return either a string or a dictionary.
-        if isinstance(result, str):
-            answer = result
-            products = []
-            pipeline_warnings = []
-        elif isinstance(result, dict):
+        if isinstance(result, dict):
             answer = (
                 result.get("response")
                 or result.get("reply")
                 or result.get("answer")
-                or result.get("message")
                 or ""
             )
-            products = result.get("products") or []
-            pipeline_warnings = (
-                result.get("warnings")
-                or result.get("waste_warnings")
-                or []
-            )
-
-            if not isinstance(answer, str):
-                answer = str(answer)
-
-            if not isinstance(products, list):
-                # Some pipelines wrap product results in an "items" field.
-                if isinstance(products, dict):
-                    products = products.get("items", [])
-                else:
-                    products = []
-
-            if not isinstance(pipeline_warnings, list):
-                pipeline_warnings = [str(pipeline_warnings)]
+            products = normalize_products(result.get("products", []))
+            warnings = result.get("warnings", [])
+            waste_warnings = result.get("waste_warnings", [])
+        elif isinstance(result, str):
+            answer = result
+            products = []
+            warnings = []
+            waste_warnings = []
         else:
             logger.error(
-                "Unexpected pipeline result type: %s",
+                "Unexpected VerityAI.handle result type: %s",
                 type(result).__name__,
             )
-            return error_response(
-                "The AI pipeline returned an unsupported response format.",
-                502,
-            )
+            return jsonify({
+                "error": "The AI pipeline returned an unexpected response."
+            }), 500
 
-        if not answer and not products:
-            answer = "The AI pipeline returned an empty response."
+        if not answer:
+            answer = "I couldn't generate a response. Please try again."
 
         tokens = estimate_tokens(safe_message) + estimate_tokens(answer)
         token_percent = min(100, tokens / MAX_TOKENS * 100)
@@ -155,33 +144,30 @@ def chat():
             "reply": answer,
             "safe_message": safe_message,
             "tokens": tokens,
-            "token_percent": round(token_percent, 6),
-            "cost": round(tokens * 0.000001, 8),
+            "token_percent": token_percent,
+            "cost": tokens * 0.000001,
             "pii": (
                 f"{pii_count} item(s) redacted"
                 if pii_count
                 else "No PII detected"
             ),
             "pii_found": pii_count,
-            "warnings": pipeline_warnings,
-            "waste_warnings": pipeline_warnings,
+            "warnings": warnings,
+            "waste_warnings": waste_warnings,
             "products": products,
         })
 
     except Exception:
         logger.exception("Error processing /chat request")
-        return error_response(
-            "Sorry, Verity AI could not process that request. "
-            "Check the application logs for details.",
-            500,
-        )
+        return jsonify({
+            "error": "The request could not be processed. Check the server logs."
+        }), 500
 
 
 @app.route("/health")
 def health():
-    """Check whether Flask is running."""
     return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False)
