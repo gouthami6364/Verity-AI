@@ -1,8 +1,8 @@
-
+```javascript
 /* =========================================================
    VERITY AI — Main JavaScript
    Flask routes: POST /chat and POST /analyze
-   Supports Groq chat + real SerpApi product cards.
+   Supports Groq chat + SerpApi product cards.
    ========================================================= */
 
 "use strict";
@@ -20,6 +20,7 @@ var isSending = false;
 var MAX_TOKENS = 131072;
 var CURRENCY = "₹";
 var EMPTY_REFINED = "Start typing a prompt...";
+
 var REFINE_STATES = [
     EMPTY_REFINED,
     "REFINING...",
@@ -52,7 +53,10 @@ function safeHttpUrl(value) {
     try {
         var parsed = new URL(value, window.location.origin);
 
-        if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        if (
+            parsed.protocol === "https:" ||
+            parsed.protocol === "http:"
+        ) {
             return parsed.href;
         }
     } catch (_) {
@@ -66,7 +70,11 @@ function firstDefined() {
     for (var i = 0; i < arguments.length; i++) {
         var value = arguments[i];
 
-        if (value !== undefined && value !== null && value !== "") {
+        if (
+            value !== undefined &&
+            value !== null &&
+            value !== ""
+        ) {
             return value;
         }
     }
@@ -84,7 +92,7 @@ document.addEventListener("DOMContentLoaded", function () {
     updateCharacterCounter();
 });
 
-/* Make links in rendered Markdown safe. */
+/* ----------------------------- Sanitizer -------------------------------- */
 
 function setupSanitizer() {
     if (!window.DOMPurify) return;
@@ -141,7 +149,12 @@ function setupClicks() {
     document.addEventListener("click", function (event) {
         var target = event.target;
 
-        if (!target || typeof target.closest !== "function") return;
+        if (
+            !target ||
+            typeof target.closest !== "function"
+        ) {
+            return;
+        }
 
         var promptEl = target.closest("[data-prompt]");
 
@@ -151,6 +164,7 @@ function setupClicks() {
         }
 
         var actionEl = target.closest("[data-action]");
+
         if (!actionEl) return;
 
         switch (actionEl.getAttribute("data-action")) {
@@ -160,6 +174,7 @@ function setupClicks() {
 
             case "scroll-chat":
                 var chat = $("chat");
+
                 if (chat) {
                     chat.scrollIntoView({ behavior: "smooth" });
                 }
@@ -188,6 +203,7 @@ function setupClicks() {
 
 function setInputValue(text) {
     var input = $("msg");
+
     if (!input) return;
 
     input.value = text || "";
@@ -231,14 +247,18 @@ async function refinePrompt() {
             },
             body: JSON.stringify(
                 Object.assign(
-                    { message: maskPIIForAnalysis(text) },
+                    {
+                        message: maskPIIForAnalysis(text)
+                    },
                     getToggles()
                 )
             )
         });
 
         if (!response.ok) {
-            throw new Error("Prompt refinement failed: " + response.status);
+            throw new Error(
+                "Prompt refinement failed: " + response.status
+            );
         }
 
         var data = await response.json();
@@ -270,11 +290,17 @@ async function refinePrompt() {
 
 function useRefinedPrompt() {
     var refinedBox = $("refinedPrompt");
+
     if (!refinedBox) return;
 
     var refined = refinedBox.textContent.trim();
 
-    if (!refined || REFINE_STATES.indexOf(refined) !== -1) return;
+    if (
+        !refined ||
+        REFINE_STATES.indexOf(refined) !== -1
+    ) {
+        return;
+    }
 
     setInputValue(refined);
 }
@@ -353,6 +379,7 @@ async function sendMessage() {
     if (!input || isSending) return;
 
     var message = input.value.trim();
+
     if (!message) return;
 
     isSending = true;
@@ -433,7 +460,10 @@ async function sendMessage() {
             data.message
         );
 
-        if (typeof answer !== "string" || !answer.trim()) {
+        if (
+            typeof answer !== "string" ||
+            !answer.trim()
+        ) {
             answer = "I couldn't generate a response. Please try again.";
         }
 
@@ -441,9 +471,7 @@ async function sendMessage() {
 
         updateDashboard(data);
 
-        // IMPORTANT:
-        // pipeline.py may return products as { items: [...], note: "..." }
-        // while other backends may return a direct array.
+        // Accept either { items: [...] } or a direct product array.
         var productData = data.products || data.results || [];
 
         var productItems = Array.isArray(productData)
@@ -457,8 +485,11 @@ async function sendMessage() {
 
         renderProducts(productItems);
 
-        // Show a helpful note when the search returns no actual listings.
-        if (productItems.length === 0 && productData && productData.note) {
+        if (
+            productItems.length === 0 &&
+            productData &&
+            productData.note
+        ) {
             console.info("Product search:", productData.note);
         }
 
@@ -490,9 +521,13 @@ async function sendMessage() {
 
 function hideWelcome() {
     var panel = $("welcomePanel");
+
     if (panel) panel.hidden = true;
 
-    var initial = document.querySelector("#chat .initial-message");
+    var initial = document.querySelector(
+        "#chat .initial-message"
+    );
+
     if (initial) initial.remove();
 }
 
@@ -500,6 +535,7 @@ function hideWelcome() {
 
 function addMessage(message, role) {
     var chat = $("chat");
+
     if (!chat) return null;
 
     if (role === "assistant") role = "bot";
@@ -512,9 +548,15 @@ function addMessage(message, role) {
 
     var text = String(message == null ? "" : message);
 
-    if (role === "bot" && window.marked && window.DOMPurify) {
+    if (
+        role === "bot" &&
+        window.marked &&
+        window.DOMPurify
+    ) {
         try {
-            bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+            bubble.innerHTML = DOMPurify.sanitize(
+                marked.parse(text)
+            );
         } catch (error) {
             bubble.textContent = text;
         }
@@ -532,9 +574,11 @@ function addMessage(message, role) {
 
 function updateLastUserMessage(message) {
     var chat = $("chat");
+
     if (!chat) return;
 
     var userMessages = chat.querySelectorAll(".message.user");
+
     if (!userMessages.length) return;
 
     var bubble = userMessages[userMessages.length - 1]
@@ -551,6 +595,7 @@ function showTypingIndicator() {
     removeTypingIndicator();
 
     var chat = $("chat");
+
     if (!chat) return;
 
     var indicator = document.createElement("div");
@@ -569,6 +614,7 @@ function showTypingIndicator() {
 
 function removeTypingIndicator() {
     var indicator = $("typingIndicator");
+
     if (indicator) indicator.remove();
 }
 
@@ -670,21 +716,25 @@ function renderProducts(products) {
         details.appendChild(heading);
 
         // Price.
-        if (price !== undefined && price !== null && String(price).trim()) {
+        if (
+            price !== undefined &&
+            price !== null &&
+            String(price).trim()
+        ) {
             var priceEl = document.createElement("p");
             priceEl.className = "product-price";
 
             var priceText = String(price).trim();
 
             if (/^\d[\d,.]*$/.test(priceText)) {
-                priceText = "₹" + priceText;
+                priceText = CURRENCY + priceText;
             }
 
             priceEl.textContent = priceText;
             details.appendChild(priceEl);
         }
 
-        // Seller name.
+        // Seller.
         if (source) {
             var sourceEl = document.createElement("p");
             sourceEl.className = "product-source";
@@ -692,6 +742,7 @@ function renderProducts(products) {
             details.appendChild(sourceEl);
         }
 
+        // Description.
         if (description) {
             var descEl = document.createElement("p");
             descEl.className = "product-description";
@@ -699,7 +750,7 @@ function renderProducts(products) {
             details.appendChild(descEl);
         }
 
-        // Link to the actual listing URL returned by the backend.
+        // Listing link.
         if (productUrl) {
             var link = document.createElement("a");
 
@@ -712,8 +763,10 @@ function renderProducts(products) {
             details.appendChild(link);
         } else {
             var unavailable = document.createElement("p");
+
             unavailable.className = "product-unavailable";
             unavailable.textContent = "Product link unavailable";
+
             details.appendChild(unavailable);
         }
 
@@ -731,6 +784,7 @@ function updateDashboard(data, options) {
 
     options = options || {};
 
+    // Context/memory status.
     setTextIfPresent(
         "memory",
         firstDefined(
@@ -743,7 +797,6 @@ function updateDashboard(data, options) {
 
     // Token count.
     var tokenValue = firstNumeric(
-        data.tokens,
         data.total_tokens,
         data.token_count,
         data.usage && data.usage.total_tokens
@@ -756,13 +809,28 @@ function updateDashboard(data, options) {
         data.usage && data.usage.percent
     );
 
-    // The pipeline's tokens field may be an object, not a number.
-    if (tokenValue === null && data.tokens && typeof data.tokens === "object") {
-        tokenValue = firstNumeric(
-            data.tokens.total_tokens,
+    // pipeline.py returns tokens as an object.
+    if (data.tokens && typeof data.tokens === "object") {
+        var pipelineTokenValue = firstNumeric(
             data.tokens.total,
+            data.tokens.total_tokens,
             data.tokens.used
         );
+
+        if (pipelineTokenValue !== null) {
+            tokenValue = pipelineTokenValue;
+        }
+
+        var pipelinePercent = firstNumeric(
+            data.tokens.usage_percent,
+            data.tokens.percent
+        );
+
+        if (pipelinePercent !== null) {
+            tokenPercent = pipelinePercent;
+        }
+    } else if (tokenValue === null) {
+        tokenValue = firstNumeric(data.tokens);
     }
 
     if (tokenPercent === null && tokenValue !== null) {
@@ -772,7 +840,9 @@ function updateDashboard(data, options) {
     if (tokenValue !== null) {
         setText(
             "tokens",
-            formatNumber(tokenValue) + " / " + formatNumber(MAX_TOKENS)
+            formatNumber(tokenValue) +
+            " / " +
+            formatNumber(MAX_TOKENS)
         );
 
         setText(
@@ -782,27 +852,44 @@ function updateDashboard(data, options) {
     }
 
     if (tokenPercent !== null) {
-        tokenPercent = Math.max(0, Math.min(100, tokenPercent));
+        tokenPercent = Math.max(
+            0,
+            Math.min(100, tokenPercent)
+        );
 
         setText("tokenPercent", Math.round(tokenPercent) + "%");
 
         var circle = $("tokenCircle");
+
         if (circle) {
-            circle.style.setProperty("--usage", tokenPercent + "%");
+            circle.style.setProperty(
+                "--usage",
+                tokenPercent + "%"
+            );
         }
 
         var bar = $("tokenProgress");
+
         if (bar) {
             bar.style.width = tokenPercent + "%";
         }
     }
 
+    // Estimated session cost.
     var costValue = firstNumeric(
         data.token_cost,
         data.cost,
         data.estimated_cost,
         data.usage && data.usage.cost
     );
+
+    if (data.tokens && typeof data.tokens === "object") {
+        var pipelineCost = firstNumeric(data.tokens.cost_inr);
+
+        if (pipelineCost !== null) {
+            costValue = pipelineCost;
+        }
+    }
 
     if (costValue !== null) {
         setText("tokenCost", CURRENCY + costValue.toFixed(6));
@@ -857,27 +944,10 @@ function updateDashboard(data, options) {
         );
     }
 
-    // Context-lock filter changes.
-    var filterValue = firstDefined(
-        data.filter_changes,
-        data.filterChanges,
-        data.contextlock_changes,
-        data.filters_applied
-    );
+    // Context Lock status and filter changes.
+    updateContextLockDashboard(data);
 
-    if (filterValue !== undefined) {
-        setText(
-            "filterChanges",
-            Array.isArray(filterValue)
-                ? filterValue.join(", ")
-                : (
-                    typeof filterValue === "object"
-                        ? JSON.stringify(filterValue)
-                        : String(filterValue)
-                )
-        );
-    }
-
+    // Prompt refinement.
     if (!options.skipRefined) {
         var refinedValue = firstDefined(
             data.refined_prompt,
@@ -885,15 +955,105 @@ function updateDashboard(data, options) {
             data.refined
         );
 
-        if (typeof refinedValue === "string" && refinedValue.trim()) {
+        if (
+            typeof refinedValue === "string" &&
+            refinedValue.trim()
+        ) {
             setText("refinedPrompt", refinedValue);
         }
     }
 }
 
+/* ----------------------------- Context Lock dashboard ------------------- */
+
+function formatFilterChange(change) {
+    if (!change || typeof change !== "object") {
+        return String(change);
+    }
+
+    var field = String(change.field || "filter");
+    var newValue = change.new;
+
+    if (newValue === null || newValue === undefined) {
+        return field + " removed";
+    }
+
+    return field + " → " + String(newValue);
+}
+
+function updateContextLockDashboard(data) {
+    // Shopping status comes from the backend pipeline.
+    if (typeof data.shopping_active === "boolean") {
+        setText(
+            "memory",
+            data.shopping_active
+                ? "Shopping Context Active"
+                : "General Chat"
+        );
+    }
+
+    var filterValue = firstDefined(
+        data.filter_changes,
+        data.filterChanges,
+        data.contextlock_changes,
+        data.filters_applied
+    );
+
+    var changes = Array.isArray(filterValue)
+        ? filterValue
+        : [];
+
+    if (filterValue !== undefined) {
+        var filterText = "";
+
+        if (Array.isArray(filterValue)) {
+            filterText = filterValue
+                .map(formatFilterChange)
+                .join(", ");
+        } else if (
+            typeof filterValue === "object" &&
+            filterValue !== null
+        ) {
+            filterText = JSON.stringify(filterValue);
+        } else {
+            filterText = String(filterValue);
+        }
+
+        setText(
+            "filterChanges",
+            filterText || "No filter changes"
+        );
+    }
+
+    // Show "Live Filter Applied" only when the backend reports
+    // that a shopping request actually changed one or more filters.
+    if (
+        data.shopping_active === true &&
+        changes.length > 0
+    ) {
+        setText(
+            "filterChanges",
+            "Live Filter Applied: " +
+            changes.map(formatFilterChange).join(", ")
+        );
+    } else if (
+        data.shopping_active === true &&
+        changes.length === 0
+    ) {
+        setText("filterChanges", "No filter changes");
+    } else if (data.shopping_active === false) {
+        setText("filterChanges", "Not applied to this message");
+    }
+}
+
+/* ----------------------------- DOM helpers ------------------------------ */
+
 function setText(id, value) {
     var el = $(id);
-    if (el) el.textContent = String(value);
+
+    if (el) {
+        el.textContent = String(value);
+    }
 }
 
 function setTextIfPresent(id, value) {
@@ -901,7 +1061,9 @@ function setTextIfPresent(id, value) {
 
     setText(
         id,
-        typeof value === "object" ? JSON.stringify(value) : value
+        typeof value === "object"
+            ? JSON.stringify(value)
+            : value
     );
 }
 
@@ -909,11 +1071,19 @@ function firstNumeric() {
     for (var i = 0; i < arguments.length; i++) {
         var value = arguments[i];
 
-        if (value === null || value === undefined || value === "") continue;
+        if (
+            value === null ||
+            value === undefined ||
+            value === ""
+        ) {
+            continue;
+        }
 
         var number = Number(value);
 
-        if (Number.isFinite(number)) return number;
+        if (Number.isFinite(number)) {
+            return number;
+        }
     }
 
     return null;
@@ -937,7 +1107,9 @@ function setupDashboardResponsiveBehavior() {
     }
 
     document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") closeDashboard();
+        if (event.key === "Escape") {
+            closeDashboard();
+        }
     });
 
     window.addEventListener("resize", function () {
@@ -951,20 +1123,31 @@ function openDashboard() {
     var dashboard = $("dashboard");
     var overlay = $("dashboardOverlay");
 
-    if (dashboard) dashboard.classList.add("open");
-    if (overlay) overlay.classList.add("active");
+    if (dashboard) {
+        dashboard.classList.add("open");
+    }
+
+    if (overlay) {
+        overlay.classList.add("active");
+    }
 }
 
 function closeDashboard() {
     var dashboard = $("dashboard");
     var overlay = $("dashboardOverlay");
 
-    if (dashboard) dashboard.classList.remove("open");
-    if (overlay) overlay.classList.remove("active");
+    if (dashboard) {
+        dashboard.classList.remove("open");
+    }
+
+    if (overlay) {
+        overlay.classList.remove("active");
+    }
 }
 
 function toggleDashboard() {
     var dashboard = $("dashboard");
+
     if (!dashboard) return;
 
     if (dashboard.classList.contains("open")) {
@@ -988,3 +1171,4 @@ function updateCharacterCounter() {
         ? length.toLocaleString("en-IN") + " characters"
         : "Ready";
 }
+```
