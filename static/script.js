@@ -1,4 +1,4 @@
-```javascript
+
 /* =========================================================
    VERITY AI — Main JavaScript
    Flask routes: POST /chat and POST /analyze
@@ -1171,4 +1171,4 @@ function updateCharacterCounter() {
         ? length.toLocaleString("en-IN") + " characters"
         : "Ready";
 }
-```
+
