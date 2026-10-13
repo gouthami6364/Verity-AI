@@ -1,23 +1,32 @@
+
 """
-Product Search
---------------
-Searches for products using the complete ContextLock state.
+Verity AI Product Search
+------------------------
+Searches Google Shopping through SerpApi.
 
-The search is intentionally strict.
+General conversation is handled separately by pipeline.py.
+This module only searches for products when called by the pipeline.
 
-If the user asks for:
-
-    blue kurta
-
-a blue shirt, blue book, blue chessboard, etc. must NOT be returned.
-
-If the search service cannot verify the requested product type,
-it is safer to return no result than an unrelated product.
+Features:
+- Searches Google Shopping in India.
+- Applies category, color, brand, and price filters.
+- Returns product titles, prices, images, and links.
+- Logs useful diagnostics without exposing the API key.
+- Never invents product results.
+- Does not treat demo-catalogue USD prices as INR.
 """
 
 import os
 import re
+import logging
 import requests
+
+
+logger = logging.getLogger(__name__)
+
+SERPAPI_URL = "https://serpapi.com/search.json"
+REQUEST_TIMEOUT = 30
+MAX_RESULTS = 12
 
 
 # -------------------------------------------------------------
@@ -25,46 +34,25 @@ import requests
 # -------------------------------------------------------------
 
 def _normal(value):
+    """Normalize text for consistent product matching."""
     if value is None:
         return ""
 
     value = str(value).lower()
-
-    value = value.replace("-", " ")
-    value = value.replace("_", " ")
-
+    value = value.replace("-", " ").replace("_", " ")
     value = re.sub(r"[^a-z0-9₹ ]+", " ", value)
     value = re.sub(r"\s+", " ", value)
 
     return value.strip()
 
 
-def _text(product):
-    parts = [
-        product.get("title", ""),
-        product.get("source", ""),
-        product.get("brand", ""),
-    ]
-
-    return _normal(" ".join(str(x) for x in parts if x))
-
-
 def _matches_value(text, value):
-    """
-    Whole-word match with simple plural handling.
-
-    FIX: the old version used plain substring matching, so "tee"
-    matched "steel" and "red" matched "bored". Now it matches words.
-    "Levi's" -> "levi s" also matches "levis" and "t shirt" matches
-    "tshirt".
-    """
-
+    """Match whole words, allowing simple singular/plural variants."""
+    text = _normal(text)
     value = _normal(value)
 
     if not value:
         return True
-
-    text = _normal(text)
 
     variants = {value, value + "s", value + "es"}
 
@@ -77,7 +65,7 @@ def _matches_value(text, value):
         if f" {variant} " in padded:
             return True
 
-    # Multi-word values: ignore spaces ("t shirt" == "tshirt").
+    # Allow "t shirt" to match "tshirt".
     if " " in value:
         compact_text = text.replace(" ", "")
         compact_value = value.replace(" ", "")
@@ -89,16 +77,34 @@ def _matches_value(text, value):
 
 
 def _matches_category(product, category):
-
+    """Verify the requested category against the product title."""
     if not category:
         return True
 
-    # Category must be verifiable from the product title.
-    return _matches_value(product.get("title", ""), category)
+    title = product.get("title", "")
+
+    # Common equivalent category names.
+    aliases = {
+        "laptop": ("laptop", "laptops", "notebook computer"),
+        "smartphone": ("smartphone", "smartphones", "mobile phone"),
+        "mobile phone": ("mobile phone", "smartphone", "mobile"),
+        "headphone": ("headphone", "headphones", "headset"),
+        "earbud": ("earbud", "earbuds", "wireless earphones"),
+        "sneaker": ("sneaker", "sneakers", "trainers"),
+        "t shirt": ("t shirt", "tshirt", "tee shirt"),
+        "jean": ("jean", "jeans", "denim jeans"),
+    }
+
+    normalized_category = _normal(category)
+    candidates = aliases.get(normalized_category, (category,))
+
+    return any(
+        _matches_value(title, candidate)
+        for candidate in candidates
+    )
 
 
 def _matches_color(product, color):
-
     if not color:
         return True
 
@@ -106,15 +112,25 @@ def _matches_color(product, color):
 
 
 def _matches_brand(product, brand):
-
     if not brand:
         return True
 
-    return _matches_value(_text(product), brand)
+    searchable = " ".join([
+        str(product.get("title", "")),
+        str(product.get("source", "")),
+        str(product.get("brand", "")),
+    ])
+
+    return _matches_value(searchable, brand)
 
 
 def _price(product):
+    """
+    Return the numeric price when the provider supplies one.
 
+    SerpApi's extracted_price is preferred because it is numeric.
+    Google Shopping is queried for India using gl=in.
+    """
     value = product.get("extracted_price")
 
     if value is None:
@@ -124,19 +140,18 @@ def _price(product):
         return None
 
     try:
-        text = re.sub(r"[^\d.]", "", str(value))
+        cleaned = re.sub(r"[^\d.]", "", str(value))
 
-        if not text:
+        if not cleaned:
             return None
 
-        return float(text)
+        return float(cleaned)
 
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
 def _matches_price(product, filters):
-
     min_price = filters.get("min_price")
     max_price = filters.get("max_price")
 
@@ -145,25 +160,25 @@ def _matches_price(product, filters):
 
     price = _price(product)
 
-    # Price constraint but unknown price -> do NOT pretend it matches.
+    # Do not claim a product matches a price limit if
+    # its price is missing or cannot be interpreted.
     if price is None:
         return False
 
-    if min_price is not None and price < float(min_price):
-        return False
+    try:
+        if min_price is not None and price < float(min_price):
+            return False
 
-    if max_price is not None and price > float(max_price):
+        if max_price is not None and price > float(max_price):
+            return False
+
+    except (ValueError, TypeError):
         return False
 
     return True
 
 
-# -------------------------------------------------------------
-# STRICT FILTER
-# -------------------------------------------------------------
-
 def _matches_all(product, filters):
-
     return (
         _matches_category(product, filters.get("category"))
         and _matches_color(product, filters.get("color"))
@@ -173,150 +188,124 @@ def _matches_all(product, filters):
 
 
 # -------------------------------------------------------------
-# SERPAPI / GOOGLE SHOPPING
+# GOOGLE SHOPPING / SERPAPI
 # -------------------------------------------------------------
 
 def _search_serpapi(filters, api_key):
+    """Fetch Google Shopping results and apply the requested filters."""
 
-    # FIX: size and material are now part of the search query too.
-    pieces = []
+    query_parts = []
 
     for field in ("brand", "color", "material", "category", "size"):
-        if filters.get(field):
-            pieces.append(str(filters[field]))
+        value = filters.get(field)
 
-    query = " ".join(pieces).strip()
+        if value:
+            query_parts.append(str(value))
+
+    query = " ".join(query_parts).strip()
 
     if not query:
         return []
 
-    try:
+    params = {
+        "engine": "google_shopping",
+        "q": query,
+        "api_key": api_key,
+        "location": "India",
+        "hl": "en",
+        "gl": "in",
+    }
 
+    try:
         response = requests.get(
-            "https://serpapi.com/search.json",
-            params={
-                "engine": "google_shopping",
-                "q": query,
-                "api_key": api_key,
-                "location": "India",
-                "hl": "en",
-                "gl": "in",
-            },
-            timeout=30,
+            SERPAPI_URL,
+            params=params,
+            timeout=REQUEST_TIMEOUT,
         )
 
         if response.status_code != 200:
+            logger.error(
+                "SerpApi returned HTTP status %s",
+                response.status_code,
+            )
             return []
 
         data = response.json()
 
+        # SerpApi may return HTTP 200 with an API-level error.
+        if data.get("error"):
+            logger.error(
+                "SerpApi API error: %s",
+                str(data["error"])[:300],
+            )
+            return []
+
+        raw_items = data.get("shopping_results", [])
+
+        logger.info(
+            "SerpApi returned %s raw shopping results for query %r",
+            len(raw_items),
+            query,
+        )
+
         products = []
 
-        for item in data.get("shopping_results", []):
-
-            price_text = item.get("price", "") or ""
+        for item in raw_items:
+            price_text = item.get("price") or ""
 
             product = {
                 "title": item.get("title", ""),
-                "price": price_text,          # FIX: the frontend reads this
+                "price": price_text,
                 "price_text": price_text,
                 "extracted_price": item.get("extracted_price"),
                 "source": item.get("source", ""),
-                "image": item.get("thumbnail", ""),
-                # FIX: Google Shopping often only has "product_link".
-                "link": item.get("link") or item.get("product_link") or "",
+                "brand": item.get("brand", ""),
+                "image": (
+                    item.get("thumbnail")
+                    or item.get("serpapi_thumbnail")
+                    or ""
+                ),
+                "image_url": (
+                    item.get("thumbnail")
+                    or item.get("serpapi_thumbnail")
+                    or ""
+                ),
+                "link": (
+                    item.get("product_link")
+                    or item.get("link")
+                    or ""
+                ),
             }
+
+            if not product["title"]:
+                continue
 
             if _matches_all(product, filters):
                 products.append(product)
 
-        return products
-
-    except Exception:
-        return []
-
-
-# -------------------------------------------------------------
-# DUMMYJSON DEMO SEARCH (used only when there is no SERPAPI_KEY)
-# -------------------------------------------------------------
-
-DUMMYJSON_CATEGORIES = {
-    "beauty": "beauty",
-    "fragrances": "fragrances",
-    "furniture": "furniture",
-    "groceries": "groceries",
-    "home decoration": "home-decoration",
-    "kitchen accessories": "kitchen-accessories",
-    "laptops": "laptops",
-    "mens shirts": "mens-shirts",
-    "mens shoes": "mens-shoes",
-    "mens watches": "mens-watches",
-    "mobile accessories": "mobile-accessories",
-    "motorcycle": "motorcycle",
-    "skin care": "skin-care",
-    "smartphones": "smartphones",
-    "sports accessories": "sports-accessories",
-    "sunglasses": "sunglasses",
-    "tablets": "tablets",
-    "tops": "tops",
-    "vehicle": "vehicle",
-    "womens bags": "womens-bags",
-    "womens dresses": "womens-dresses",
-    "womens jewellery": "womens-jewellery",
-    "womens shoes": "womens-shoes",
-    "womens watches": "womens-watches",
-}
-
-
-def _search_dummyjson(filters):
-    """
-    DummyJSON is only a demo catalogue. Unknown category = no results.
-    """
-
-    endpoint = DUMMYJSON_CATEGORIES.get(_normal(filters.get("category")))
-
-    if not endpoint:
-        return []
-
-    try:
-
-        response = requests.get(
-            f"https://dummyjson.com/products/category/{endpoint}",
-            timeout=15,
+        logger.info(
+            "%s products passed Verity AI's filters",
+            len(products),
         )
 
-        if response.status_code != 200:
-            return []
-
-        # FIX: the category was already verified by the endpoint, so we
-        # must NOT re-check it against the title ("mens shirts" is never
-        # inside a title, so everything used to be rejected).
-        other_filters = dict(filters)
-        other_filters.pop("category", None)
-
-        products = []
-
-        for item in response.json().get("products", []):
-
-            price = item.get("price")
-
-            product = {
-                "title": item.get("title", ""),
-                # FIX: DummyJSON prices are USD, not rupees.
-                "price": f"${price}" if price is not None else "",
-                "price_text": f"${price}" if price is not None else "",
-                "extracted_price": price,
-                "source": "Demo catalogue",
-                "image": item.get("thumbnail", ""),
-                "link": "",
-            }
-
-            if _matches_all(product, other_filters):
-                products.append(product)
-
         return products
 
-    except Exception:
+    except requests.Timeout:
+        logger.error("SerpApi request timed out")
+        return []
+
+    except requests.RequestException as exc:
+        logger.error(
+            "SerpApi network request failed: %s",
+            type(exc).__name__,
+        )
+        return []
+
+    except (ValueError, TypeError) as exc:
+        logger.error(
+            "Could not parse SerpApi response: %s",
+            type(exc).__name__,
+        )
         return []
 
 
@@ -325,39 +314,53 @@ def _search_dummyjson(filters):
 # -------------------------------------------------------------
 
 def search_products(filters):
+    """
+    Search products using ContextLock's current filter state.
+
+    Expected filters may include:
+        category, color, brand, material, size,
+        min_price, max_price
+
+    Returns:
+        {
+            "items": [...],
+            "note": "..."
+        }
+    """
 
     filters = dict(filters or {})
 
-    if not filters:
+    category = filters.get("category")
+
+    if not isinstance(category, str) or not category.strip():
         return {
             "items": [],
-            "note": "Tell me what product you want.",
+            "note": "Tell me which product you want to find.",
         }
 
-    # FIX: without a category (e.g. only "blue") we can't verify results,
-    # so don't search at all.
-    if not filters.get("category"):
-        return {
-            "items": [],
-            "note": "Tell me which product you are looking for.",
-        }
-
-    # FIX: read the key at call time, not at import time.
     api_key = os.getenv("SERPAPI_KEY")
 
-    if api_key:
-        products = _search_serpapi(filters, api_key)
-    else:
-        products = _search_dummyjson(filters)
+    if not api_key:
+        logger.warning("SERPAPI_KEY is not configured")
 
+        return {
+            "items": [],
+            "note": (
+                "Product search is not configured yet. "
+                "Please check the SERPAPI_KEY environment variable."
+            ),
+        }
+
+    products = _search_serpapi(filters, api_key)
+
+    # Remove duplicate product listings.
     seen = set()
     clean = []
 
     for product in products:
-
         key = (
-            product.get("title", ""),
-            product.get("source", ""),
+            _normal(product.get("title")),
+            _normal(product.get("source")),
         )
 
         if key in seen:
@@ -366,40 +369,36 @@ def search_products(filters):
         seen.add(key)
         clean.append(product)
 
-    clean = clean[:12]
+    clean = clean[:MAX_RESULTS]
 
     if not clean:
+        requested = []
 
-        parts = []
-
-        if filters.get("color"):
-            parts.append(str(filters["color"]))
-
-        if filters.get("brand"):
-            parts.append(str(filters["brand"]))
-
-        if filters.get("category"):
-            parts.append(str(filters["category"]))
+        for field in ("brand", "color", "category"):
+            if filters.get(field):
+                requested.append(str(filters[field]))
 
         if filters.get("max_price") is not None:
-            parts.append(f"under ₹{filters['max_price']}")
+            requested.append(f"up to ₹{filters['max_price']}")
 
         if filters.get("min_price") is not None:
-            parts.append(f"above ₹{filters['min_price']}")
+            requested.append(f"from ₹{filters['min_price']}")
 
-        request_text = " ".join(parts)
-
-        note = f"I couldn't find verified products matching '{request_text}'."
-
-        if not api_key:
-            note += " (SERPAPI_KEY is not set, so only the demo catalogue was searched.)"
+        description = " ".join(requested)
 
         return {
             "items": [],
-            "note": note,
+            "note": (
+                f"No verified matching products were found for "
+                f"'{description}'. Try a broader search or a different "
+                "price range."
+            ),
         }
 
     return {
         "items": clean,
-        "note": "Showing products matching your current requirements.",
+        "note": (
+            f"Found {len(clean)} matching product(s) "
+            "from Google Shopping."
+        ),
     }
