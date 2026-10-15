@@ -474,3 +474,6 @@ h1,h2,h3,p { margin:0; }
 .history-item small, .history-empty { color:var(--muted); font-size:11px; }
 .history-empty { padding:18px 4px; }
 .composer-options.settings-focus { outline:2px solid rgba(183,156,255,.9); outline-offset:5px; border-radius:6px; }
+.audience-control { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; color:var(--muted); font-size:10px; }
+.audience-control select { max-width:145px; padding:5px 8px; border:1px solid var(--border); border-radius:8px; background:#0c132c; color:var(--text); font:inherit; font-size:10px; }
+.audience-control select:focus-visible { outline:2px solid var(--purple-light); outline-offset:2px; }
