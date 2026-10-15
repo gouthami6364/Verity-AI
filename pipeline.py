@@ -297,38 +297,39 @@ class VerityAI:
         }
 
     def handle(self, raw_message):
-    """Process one user message and return the response payload."""
-         if not isinstance(raw_message, str):
-             raw_message = ""
+        """Process one user message and return the response payload."""
+        if not isinstance(raw_message, str):
+            raw_message = ""
 
-    # Redact the message first.
-         safe_message, pii_found = redact(raw_message)
+        # Redact before intent detection, context updates, history, and LLM use.
+        safe_message, pii_found = redact(raw_message)
 
-    # Normalize follow-ups like "I prefer blue ones"
-    # into a form the context extractor can understand.
-         context_message = normalize_shopping_followup(safe_message)
+        # Normalize follow-ups such as "I prefer blue ones" into a phrase
+        # that ContextLock can extract, e.g. "in blue".
+        context_message = normalize_shopping_followup(safe_message)
 
-    # Detect shopping intent using the existing context.
-         shopping_request = is_shopping_request(
-           context_message,
-           self.lock.state,
-    )
+        # Detect follow-ups against the existing context BEFORE updating it.
+        shopping_request = is_shopping_request(
+            context_message,
+            self.lock.state,
+        )
 
-    if shopping_request:
-        # Preserve existing category and budget while adding color.
-            self.lock.update(context_message)
+        # Always define these so the response payload works for non-shopping turns.
+        filter_changes = []
+        products = None
 
-            print("DEBUG shopping_request:", shopping_request)
-            print("DEBUG shopping_state:", self.lock.state)
-
+        if shopping_request:
+            # Update the context exactly once, preserving existing constraints.
             self.lock.update(context_message)
             filter_changes = list(self.lock.changes or [])
 
-            # Search again after every shopping request/refinement.
+            # Optional debugging; remove these lines after testing.
+            print("DEBUG shopping_request:", shopping_request)
+            print("DEBUG shopping_state:", self.lock.state)
+
+            # Search again after each shopping request or refinement.
             self.last_products = search_products(self.lock.state)
             products = self.last_products
-        else:
-            products = None
 
         system = BASE_SYSTEM
 
@@ -340,7 +341,11 @@ class VerityAI:
                 system += "\n\nCurrent shopping context:\n" + context_prompt
 
             if products is not None:
-                items = products.get("items", []) if isinstance(products, dict) else []
+                items = (
+                    products.get("items", [])
+                    if isinstance(products, dict)
+                    else []
+                )
                 item_count = len(items)
 
                 if item_count:
@@ -351,7 +356,11 @@ class VerityAI:
                         "that are not in the supplied shopping context."
                     )
                 else:
-                    note = products.get("note", "") if isinstance(products, dict) else ""
+                    note = (
+                        products.get("note", "")
+                        if isinstance(products, dict)
+                        else ""
+                    )
                     system += (
                         "\n\nSearch status: no matching products were returned."
                     )
@@ -380,8 +389,8 @@ class VerityAI:
 
         reply, usage = call_llm(system, self.history, safe_message)
 
-        # Store only redacted messages. This history is retained by the
-        # persistent VerityAI instance managed by server.py.
+        # Store only redacted messages. History persists while server.py
+        # reuses this VerityAI instance for the same chat/session ID.
         self.history.append({"role": "user", "content": safe_message})
         self.history.append({"role": "assistant", "content": reply})
 
