@@ -370,57 +370,105 @@ class ContextLock:
     # ---------------------------------------------------------
 
     def _local_fallback(self, message):
-
-        text = message.lower()
+        """
+        Deterministic fallback used when Groq is unavailable.
+        Preserves existing fields and extracts common shopping constraints.
+        The category list here is only a fallback; Groq handles dynamic categories.
+        """
+        text = (message or "").lower().strip()
 
         result = {
             "set": {},
             "remove": [],
         }
 
-        # FIX: the old "[₹rs.]?" was a character class, not "₹ or rs".
         money = r"(?:₹|rs\.?|inr)?\s*([\d,]+)"
 
-        # Price
+        # Price constraints.
         match = re.search(
             r"(?:under|below|less than|upto|up to|within)\s*" + money,
             text,
         )
-
         if match:
             result["set"]["max_price"] = int(
-                match.group(1).replace(",", "") or 0
+                match.group(1).replace(",", "")
             )
 
         match = re.search(
             r"(?:above|over|more than|atleast|at least)\s*" + money,
             text,
         )
-
         if match:
             result["set"]["min_price"] = int(
-                match.group(1).replace(",", "") or 0
+                match.group(1).replace(",", "")
             )
 
-        # Removals: "remove the brand", "no size", "clear colour"
+        # Explicitly remove fields.
         for match in re.finditer(
             r"(?:remove|clear|drop|without|no)\s+(?:the\s+)?"
             r"(brand|colou?r|size|material|category|price)",
             text,
         ):
             word = match.group(1)
-
             if word == "price":
                 result["remove"].extend(["min_price", "max_price"])
             else:
                 result["remove"].append(FIELD_ALIASES[word])
 
-        # Colors - skip when the user is removing the color
+        # Extract a category when it is explicitly mentioned.
+        # This local list is intentionally broad; the LLM handles dynamic categories.
+        categories = [
+            "running shoes", "sneakers", "shoes", "t-shirt", "t shirt",
+            "headphones", "earbuds", "smartphone", "mobile phone",
+            "washing machine", "refrigerator", "fridge", "laptop",
+            "smartwatch", "watch", "handbag", "backpack", "sunglasses",
+            "jeans", "trousers", "shirt", "kurta", "saree", "sari",
+            "dress", "jacket", "coat", "camera", "tablet", "chair",
+            "sofa", "book", "books",
+        ]
+        if "category" not in result["remove"]:
+            for category in sorted(categories, key=len, reverse=True):
+                if re.search(r"\b" + re.escape(category) + r"\b", text):
+                    result["set"]["category"] = category.replace("t shirt", "t-shirt")
+                    break
+
+        # Extract a color preference.
         if "color" not in result["remove"]:
             for color in COLORS:
                 if re.search(r"\b" + re.escape(color) + r"\b", text):
                     result["set"]["color"] = color
                     break
+
+        # Extract common sizes.
+        if "size" not in result["remove"]:
+            size_match = re.search(
+                r"\b(?:size\s*)?(xs|s|m|l|xl|xxl|xxxl|\d{1,2})\b",
+                text,
+                re.IGNORECASE,
+            )
+            if size_match and re.search(r"\bsize\b", text):
+                result["set"]["size"] = size_match.group(1).upper()
+
+        # Extract a brand only when explicitly introduced. This avoids treating
+        # arbitrary words as brands in fallback mode.
+        if "brand" not in result["remove"]:
+            brand_match = re.search(
+                r"\b(?:brand\s+is|brand:|show|prefer|want)\s+"
+                r"([a-z0-9][a-z0-9&' -]{0,40})",
+                text,
+                re.IGNORECASE,
+            )
+            if brand_match:
+                brand = brand_match.group(1).strip(" .,!?:;")
+                # Stop at common constraint words.
+                brand = re.split(
+                    r"\b(?:under|below|over|above|in|with|size|color|colour)\b",
+                    brand,
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0].strip()
+                if brand and brand not in {"me", "more", "cheaper", "blue", "red"}:
+                    result["set"]["brand"] = brand.title()
 
         return result
 
