@@ -38,13 +38,13 @@
             <button class="nav-item" type="button" data-action="toggle-dashboard">
                 <span class="nav-icon">⛨</span> Security Dashboard
             </button>
-            <button class="nav-item" type="button" data-action="toggle-dashboard">
+            <button class="nav-item" type="button" data-action="token-analytics">
                 <span class="nav-icon">⌁</span> Token Analytics
             </button>
             <button class="nav-item" type="button" data-action="focus-input">
                 <span class="nav-icon">▤</span> Documents
             </button>
-            <button class="nav-item" type="button" data-action="toggle-dashboard">
+            <button class="nav-item" type="button" data-action="settings">
                 <span class="nav-icon">⚙</span> Settings
             </button>
         </nav>
@@ -258,6 +258,18 @@
     </aside>
 
     <div id="dashboardOverlay" class="dashboard-overlay"></div>
+
+    <dialog id="chatHistoryDialog" class="history-dialog" aria-labelledby="historyTitle">
+        <div class="history-dialog-header">
+            <div>
+                <h2 id="historyTitle">Chat History</h2>
+                <p>Saved in this browser tab only.</p>
+            </div>
+            <button id="closeHistory" class="icon-button" type="button" aria-label="Close chat history">×</button>
+        </div>
+        <div id="chatHistoryList" class="history-list"></div>
+    </dialog>
+    <input id="documentPicker" type="file" accept=".txt,.md,.csv,text/plain,text/markdown,text/csv" hidden>
 </div>
 
 <!-- Loaded ONCE. All behaviour lives in script.js -->
