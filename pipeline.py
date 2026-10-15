@@ -102,6 +102,8 @@ SHOPPING_FOLLOWUP_PATTERN = re.compile(
     r"same brand|another brand|"
     r"only show|filter by|remove the filter|"
     r"those products|these products|those ones|these ones|"
+    r"for men|for women|\bmen\b|\bwomen\b|men's|mens|women's|womens|unisex|male|female|"
+    r"ladies|gents|"
     r"i prefer|i'd prefer|i would prefer|"
     r"i want|i'd like|i would like|"
     r"my preference is|"
@@ -310,6 +312,7 @@ class VerityAI:
         pii_protection=True,
         context_lock=True,
         token_manager=True,
+        gender_filter=None,
     ):
         """Process one user message and return the response payload."""
         if not isinstance(raw_message, str):
@@ -329,6 +332,9 @@ class VerityAI:
         # Detect follow-ups against the existing context BEFORE updating it.
         shopping_state = self.lock.state if context_lock else {}
         shopping_request = is_shopping_request(context_message, shopping_state)
+        gender_filter = str(gender_filter or "").strip().lower()
+        if gender_filter not in {"", "all", "men", "women", "unisex"}:
+            gender_filter = ""
 
         # Always define these so the response payload works for non-shopping turns.
         filter_changes = []
@@ -337,6 +343,10 @@ class VerityAI:
         if shopping_request and context_lock:
             # Update the context exactly once, preserving existing constraints.
             self.lock.update(context_message)
+            if gender_filter == "all":
+                self.lock._apply({"set": {}, "remove": ["gender"]})
+            elif gender_filter:
+                self.lock._apply({"set": {"gender": gender_filter}, "remove": []})
             filter_changes = list(self.lock.changes or [])
 
             # Optional debugging; remove these lines after testing.
@@ -352,6 +362,10 @@ class VerityAI:
             self.lock.changes = []
             request_context = ContextLock()
             request_context.update(context_message)
+            if gender_filter == "all":
+                request_context._apply({"set": {}, "remove": ["gender"]})
+            elif gender_filter:
+                request_context._apply({"set": {"gender": gender_filter}, "remove": []})
             self.last_products = search_products(request_context.state)
             products = self.last_products
 
