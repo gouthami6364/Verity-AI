@@ -147,6 +147,7 @@ def chat():
             answer = result.get("response") or result.get("reply") or result.get("answer") or ""
             safe_message = result.get("safe_message", message)
             pii_count = len(result.get("pii_found") or [])
+            context_state = result.get("filters") or {}
             token_metrics = result.get("tokens")
             products = normalize_products(result.get("products", []))
             warnings = result.get("warnings", [])
@@ -154,6 +155,7 @@ def chat():
         elif isinstance(result, str):
             answer, products, warnings, waste_warnings = result, [], [], []
             safe_message, pii_count = message, 0
+            context_state = {}
             token_metrics = None
         else:
             logger.error("Unexpected VerityAI.handle result type: %s", type(result).__name__)
@@ -171,6 +173,12 @@ def chat():
             if isinstance(token_metrics, dict)
             else None
         )
+        if not pii_protection:
+            pii_status = "Protection disabled"
+        elif pii_count:
+            pii_status = f"Protected {pii_count} PII item(s)"
+        else:
+            pii_status = "Protection on — no PII detected"
         return jsonify({
             "response": answer,
             "reply": answer,
@@ -181,6 +189,9 @@ def chat():
             "cost": session_cost if token_manager else None,
             "pii": f"{pii_count} item(s) redacted" if pii_count else "No PII detected",
             "pii_found": pii_count,
+            "pii_status": pii_status,
+            "context_state": context_state,
+            "context_active": bool(context_lock and context_state),
             "features": {
                 "pii_protection": pii_protection,
                 "context_lock": context_lock,
