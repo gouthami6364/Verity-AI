@@ -248,7 +248,9 @@ async function refinePrompt() {
             body: JSON.stringify(
                 Object.assign(
                     {
-                        message: maskPIIForAnalysis(text)
+                        message: isChecked("piiToggle", true)
+                            ? maskPIIForAnalysis(text)
+                            : text
                     },
                     getToggles()
                 )
@@ -394,7 +396,9 @@ async function sendMessage() {
 
     hideWelcome();
 
-    var safeMessage = maskPIIForAnalysis(message);
+    var safeMessage = isChecked("piiToggle", true)
+        ? maskPIIForAnalysis(message)
+        : message;
 
     addMessage(safeMessage, "user");
 
@@ -962,6 +966,26 @@ function updateDashboard(data, options) {
             setText("refinedPrompt", refinedValue);
         }
     }
+
+    // Reflect feature switches instead of leaving stale dashboard values.
+    var features = data.features || {};
+    if (features.token_manager === false) {
+        setText("tokens", "Disabled");
+        setText("activityTokens", "Token tracking disabled");
+        setText("tokenPercent", "—");
+        setText("tokenCost", "—");
+        var tokenCircle = $("tokenCircle");
+        if (tokenCircle) tokenCircle.style.setProperty("--usage", "0%");
+        var tokenProgress = $("tokenProgress");
+        if (tokenProgress) tokenProgress.style.width = "0%";
+    }
+    if (features.pii_protection === false) {
+        setText("pii", "Protection disabled");
+        setText("activityPii", "Protection disabled");
+    }
+    if (features.context_lock === false) {
+        setText("memory", "Context Lock disabled");
+    }
 }
 
 /* ----------------------------- Context Lock dashboard ------------------- */
@@ -1171,4 +1195,3 @@ function updateCharacterCounter() {
         ? length.toLocaleString("en-IN") + " characters"
         : "Ready";
 }
-
