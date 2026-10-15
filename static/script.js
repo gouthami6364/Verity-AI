@@ -1089,6 +1089,7 @@ function updateDashboard(data, options) {
 
     // PII status.
     var piiValue = firstDefined(
+        data.pii_status,
         data.pii,
         data.pii_redacted,
         data.redactions,
@@ -1194,14 +1195,18 @@ function formatFilterChange(change) {
 }
 
 function updateContextLockDashboard(data) {
-    // Shopping status comes from the backend pipeline.
-    if (typeof data.shopping_active === "boolean") {
-        setText(
-            "memory",
-            data.shopping_active
-                ? "Shopping Context Active"
-                : "General Chat"
-        );
+    var features = data.features || {};
+    if (features.context_lock === false) {
+        setText("memory", "Context Lock disabled");
+    } else if (data.context_active === true && data.context_state && typeof data.context_state === "object") {
+        var contextLines = Object.keys(data.context_state).map(function (key) {
+            return key.replace(/_/g, " ") + ": " + String(data.context_state[key]);
+        });
+        setText("memory", "Saved shopping context — " + contextLines.join(" · "));
+    } else if (data.context_active === false || (data.context_state && Object.keys(data.context_state).length === 0)) {
+        setText("memory", "Context Lock active · no saved shopping context");
+    } else if (typeof data.shopping_active === "boolean") {
+        setText("memory", data.shopping_active ? "Shopping context active" : "No saved shopping context");
     }
 
     var filterValue = firstDefined(
