@@ -130,6 +130,9 @@ def chat():
     pii_protection = data.get("pii_protection", True) is True
     context_lock = data.get("context_lock", True) is True
     token_manager = data.get("token_manager", True) is True
+    gender_filter = data.get("gender_filter", "")
+    if not isinstance(gender_filter, str):
+        gender_filter = ""
     message = message[:10000]
 
     try:
@@ -141,6 +144,7 @@ def chat():
                 pii_protection=pii_protection,
                 context_lock=context_lock,
                 token_manager=token_manager,
+                gender_filter=gender_filter,
             )
 
         if isinstance(result, dict):
