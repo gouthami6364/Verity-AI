@@ -297,24 +297,29 @@ class VerityAI:
         }
 
     def handle(self, raw_message):
-        """Process one user message and return the response payload."""
-        if not isinstance(raw_message, str):
-            raw_message = ""
+    """Process one user message and return the response payload."""
+    if not isinstance(raw_message, str):
+        raw_message = ""
 
-        # Redact before intent detection, context updates, history, and LLM use.
-        safe_message, pii_found = redact(raw_message)
+    # Redact the message first.
+    safe_message, pii_found = redact(raw_message)
 
-        # Detect follow-ups against the state BEFORE updating it.
-        shopping_request = is_shopping_request(
-            safe_message,
-            self.lock.state,
-        )
+    # Normalize follow-ups like "I prefer blue ones"
+    # into a form the context extractor can understand.
+    context_message = normalize_shopping_followup(safe_message)
 
-        filter_changes = []
+    # Detect shopping intent using the existing context.
+    shopping_request = is_shopping_request(
+        context_message,
+        self.lock.state,
+    )
 
-        if shopping_request:
-            # Normalize preference phrasing for the existing context parser.
-            context_message = normalize_shopping_followup(safe_message)
+    if shopping_request:
+        # Preserve existing category and budget while adding color.
+        self.lock.update(context_message)
+
+    print("DEBUG shopping_request:", shopping_request)
+    print("DEBUG shopping_state:", self.lock.state)
 
             self.lock.update(context_message)
             filter_changes = list(self.lock.changes or [])
