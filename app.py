@@ -147,27 +147,38 @@ def chat():
             answer = result.get("response") or result.get("reply") or result.get("answer") or ""
             safe_message = result.get("safe_message", message)
             pii_count = len(result.get("pii_found") or [])
+            token_metrics = result.get("tokens")
             products = normalize_products(result.get("products", []))
             warnings = result.get("warnings", [])
             waste_warnings = result.get("waste_warnings", [])
         elif isinstance(result, str):
             answer, products, warnings, waste_warnings = result, [], [], []
             safe_message, pii_count = message, 0
+            token_metrics = None
         else:
             logger.error("Unexpected VerityAI.handle result type: %s", type(result).__name__)
             return jsonify({"error": "The AI pipeline returned an unexpected response."}), 500
 
         if not answer:
             answer = "I couldn't generate a response. Please try again."
-        tokens = estimate_tokens(safe_message) + estimate_tokens(answer)
+        token_percent = (
+            token_metrics.get("usage_percent")
+            if isinstance(token_metrics, dict)
+            else None
+        )
+        session_cost = (
+            token_metrics.get("cost_inr")
+            if isinstance(token_metrics, dict)
+            else None
+        )
         return jsonify({
             "response": answer,
             "reply": answer,
             "safe_message": safe_message,
             "chat_id": chat_id,
-            "tokens": tokens if token_manager else None,
-            "token_percent": min(100, tokens / MAX_TOKENS * 100) if token_manager else None,
-            "cost": tokens * 0.000001 if token_manager else None,
+            "tokens": token_metrics if token_manager else None,
+            "token_percent": token_percent if token_manager else None,
+            "cost": session_cost if token_manager else None,
             "pii": f"{pii_count} item(s) redacted" if pii_count else "No PII detected",
             "pii_found": pii_count,
             "features": {
