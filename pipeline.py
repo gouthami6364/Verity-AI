@@ -274,23 +274,31 @@ class VerityAI:
         self.session_cost_inr = 0.0
 
     def _build_tokens(self, after, usage):
-        """Build token and estimated session-cost information for the UI."""
+        """Report this request's context-window use and cumulative session cost."""
         if usage:
             prompt = int(usage.get("prompt_tokens") or 0)
             completion = int(usage.get("completion_tokens") or 0)
-            total = int(usage.get("total_tokens") or (prompt + completion))
+            # Context occupancy is the prompt (system + conversation history +
+            # current user message). Completion tokens are not part of the
+            # prompt's context usage, so don't add them to the context meter.
+            context_tokens = prompt or int(after.get("total", 0))
 
             self.session_cost_inr += (
                 prompt * INPUT_COST_INR_PER_M / 1_000_000
                 + completion * OUTPUT_COST_INR_PER_M / 1_000_000
             )
         else:
-            total = _breakdown_total(after)
+            prompt = _breakdown_total(after)
+            completion = 0
+            context_tokens = prompt
 
-        percent = (total / CONTEXT_LIMIT * 100) if CONTEXT_LIMIT else 0
+        percent = (context_tokens / CONTEXT_LIMIT * 100) if CONTEXT_LIMIT else 0
 
         return {
-            "total": int(total),
+            "total": int(context_tokens),
+            "context_tokens": int(context_tokens),
+            "input_tokens": int(prompt),
+            "output_tokens": int(completion),
             "context_limit": CONTEXT_LIMIT,
             "usage_percent": round(percent, 4),
             "cost_inr": round(self.session_cost_inr, 6),
