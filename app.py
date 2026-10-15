@@ -127,25 +127,32 @@ def chat():
         return jsonify({"error": "Empty message"}), 400
 
     chat_id = _get_chat_id(data)
-    pii_protection = data.get("pii_protection", True)
-    if pii_protection:
-        safe_message, pii_count = redact(message[:10000])
-    else:
-        safe_message, pii_count = message[:10000], 0
+    pii_protection = data.get("pii_protection", True) is True
+    context_lock = data.get("context_lock", True) is True
+    token_manager = data.get("token_manager", True) is True
+    message = message[:10000]
 
     try:
         session = _get_session(chat_id)
         with session.lock:
             session.last_access = time.time()
-            result = session.bot.handle(safe_message)
+            result = session.bot.handle(
+                message,
+                pii_protection=pii_protection,
+                context_lock=context_lock,
+                token_manager=token_manager,
+            )
 
         if isinstance(result, dict):
             answer = result.get("response") or result.get("reply") or result.get("answer") or ""
+            safe_message = result.get("safe_message", message)
+            pii_count = len(result.get("pii_found") or [])
             products = normalize_products(result.get("products", []))
             warnings = result.get("warnings", [])
             waste_warnings = result.get("waste_warnings", [])
         elif isinstance(result, str):
             answer, products, warnings, waste_warnings = result, [], [], []
+            safe_message, pii_count = message, 0
         else:
             logger.error("Unexpected VerityAI.handle result type: %s", type(result).__name__)
             return jsonify({"error": "The AI pipeline returned an unexpected response."}), 500
@@ -158,11 +165,16 @@ def chat():
             "reply": answer,
             "safe_message": safe_message,
             "chat_id": chat_id,
-            "tokens": tokens,
-            "token_percent": min(100, tokens / MAX_TOKENS * 100),
-            "cost": tokens * 0.000001,
+            "tokens": tokens if token_manager else None,
+            "token_percent": min(100, tokens / MAX_TOKENS * 100) if token_manager else None,
+            "cost": tokens * 0.000001 if token_manager else None,
             "pii": f"{pii_count} item(s) redacted" if pii_count else "No PII detected",
             "pii_found": pii_count,
+            "features": {
+                "pii_protection": pii_protection,
+                "context_lock": context_lock,
+                "token_manager": token_manager,
+            },
             "warnings": warnings,
             "waste_warnings": waste_warnings,
             "products": products,
