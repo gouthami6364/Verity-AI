@@ -451,3 +451,26 @@ h1,h2,h3,p { margin:0; }
         font-size: 16px;
     }
 }
+
+/* Functional chat-history dialog */
+.history-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(75vh, 640px);
+  padding: 20px;
+  border: 1px solid rgba(139,92,246,.4);
+  border-radius: 16px;
+  background: #0b1230;
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+}
+.history-dialog::backdrop { background: rgba(2,5,18,.72); backdrop-filter: blur(3px); }
+.history-dialog-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.history-dialog-header h2 { font-size:18px; }
+.history-dialog-header p { margin-top:4px; color:var(--muted); font-size:11px; }
+.history-list { display:flex; flex-direction:column; gap:8px; max-height:55vh; overflow:auto; }
+.history-item { display:flex; flex-direction:column; align-items:flex-start; gap:5px; padding:12px; border:1px solid var(--border); border-radius:10px; background:rgba(13,21,48,.8); text-align:left; }
+.history-item:hover { border-color:var(--border-bright); background:rgba(108,59,224,.15); }
+.history-item strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.history-item small, .history-empty { color:var(--muted); font-size:11px; }
+.history-empty { padding:18px 4px; }
+.composer-options.settings-focus { outline:2px solid rgba(183,156,255,.9); outline-offset:5px; border-radius:6px; }
