@@ -152,6 +152,8 @@ def chat():
             safe_message = result.get("safe_message", message)
             pii_count = len(result.get("pii_found") or [])
             context_state = result.get("filters") or {}
+            filter_changes = result.get("filter_changes") or []
+            shopping_active = result.get("shopping_active", False) is True
             token_metrics = result.get("tokens")
             products = normalize_products(result.get("products", []))
             warnings = result.get("warnings", [])
@@ -160,6 +162,8 @@ def chat():
             answer, products, warnings, waste_warnings = result, [], [], []
             safe_message, pii_count = message, 0
             context_state = {}
+            filter_changes = []
+            shopping_active = False
             token_metrics = None
         else:
             logger.error("Unexpected VerityAI.handle result type: %s", type(result).__name__)
@@ -196,6 +200,8 @@ def chat():
             "pii_status": pii_status,
             "context_state": context_state,
             "context_active": bool(context_lock and context_state),
+            "filter_changes": filter_changes,
+            "shopping_active": shopping_active,
             "features": {
                 "pii_protection": pii_protection,
                 "context_lock": context_lock,
