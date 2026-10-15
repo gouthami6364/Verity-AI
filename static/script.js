@@ -9,9 +9,23 @@
 
 /* ----------------------------- Global state ----------------------------- */
 
-var chatId = (window.crypto && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : Math.random().toString(36).substring(2);
+function makeChatId() {
+    return (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : Math.random().toString(36).substring(2);
+}
+
+function getStoredChatId() {
+    try {
+        return sessionStorage.getItem("verity_active_chat") || makeChatId();
+    } catch (_) {
+        return makeChatId();
+    }
+}
+
+var chatId = getStoredChatId();
+var currentMessages = [];
+var isRestoringChat = false;
 
 var refinementTimer = null;
 var refinementRequestId = 0;
@@ -82,6 +96,147 @@ function firstDefined() {
     return undefined;
 }
 
+function readSavedChats() {
+    try {
+        var parsed = JSON.parse(sessionStorage.getItem("verity_chats") || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function saveCurrentChat() {
+    if (!currentMessages.length) return;
+    try {
+        var chats = readSavedChats();
+        var firstUser = currentMessages.find(function (item) { return item.role === "user"; });
+        chats[chatId] = {
+            id: chatId,
+            title: firstUser ? firstUser.content.slice(0, 70) : "New chat",
+            updated: Date.now(),
+            messages: currentMessages
+        };
+        sessionStorage.setItem("verity_chats", JSON.stringify(chats));
+        sessionStorage.setItem("verity_active_chat", chatId);
+    } catch (error) {
+        console.warn("Could not save this tab's chat history:", error);
+    }
+}
+
+function restoreChat(id) {
+    chatId = id || makeChatId();
+    var chats = readSavedChats();
+    var saved = chats[chatId];
+    currentMessages = saved && Array.isArray(saved.messages) ? saved.messages : [];
+    try { sessionStorage.setItem("verity_active_chat", chatId); } catch (_) {}
+
+    var chat = $("chat");
+    if (!chat) return;
+    chat.replaceChildren();
+    if (!currentMessages.length) {
+        chat.innerHTML = '<div class="welcome-message initial-message"><div class="welcome-title">Your private AI workspace</div><div class="welcome-text">Ask a question to get started.</div><div class="welcome-line">Your messages are processed by your configured privacy pipeline.</div></div>';
+        var welcome = $("welcomePanel");
+        if (welcome) welcome.hidden = false;
+        return;
+    }
+
+    var welcome = $("welcomePanel");
+    if (welcome) welcome.hidden = true;
+    isRestoringChat = true;
+    currentMessages.forEach(function (item) {
+        if (item && (item.role === "user" || item.role === "bot")) {
+            addMessage(item.content, item.role);
+        }
+    });
+    isRestoringChat = false;
+}
+
+function startNewChat() {
+    saveCurrentChat();
+    chatId = makeChatId();
+    currentMessages = [];
+    try { sessionStorage.setItem("verity_active_chat", chatId); } catch (_) {}
+    restoreChat(chatId);
+    renderProducts([]);
+    setText("memory", "No active context");
+    setText("filterChanges", "No changes");
+    setText("activityStatus", "Ready");
+    var input = $("msg");
+    if (input) input.focus();
+}
+
+function openChatHistory() {
+    saveCurrentChat();
+    var dialog = $("chatHistoryDialog");
+    var list = $("chatHistoryList");
+    if (!dialog || !list) return;
+    list.replaceChildren();
+    var chats = Object.keys(readSavedChats()).map(function (id) {
+        return readSavedChats()[id];
+    }).filter(function (item) {
+        return item && Array.isArray(item.messages) && item.messages.length;
+    }).sort(function (a, b) { return b.updated - a.updated; });
+
+    if (!chats.length) {
+        var empty = document.createElement("p");
+        empty.className = "history-empty";
+        empty.textContent = "No chats saved in this browser tab yet.";
+        list.appendChild(empty);
+    } else {
+        chats.forEach(function (item) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "history-item";
+            var title = document.createElement("strong");
+            title.textContent = item.title || "Chat";
+            var date = document.createElement("small");
+            date.textContent = new Date(item.updated).toLocaleString();
+            button.append(title, date);
+            button.addEventListener("click", function () {
+                restoreChat(item.id);
+                closeChatHistory();
+            });
+            list.appendChild(button);
+        });
+    }
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "open");
+}
+
+function closeChatHistory() {
+    var dialog = $("chatHistoryDialog");
+    if (dialog && typeof dialog.close === "function" && dialog.open) dialog.close();
+    else if (dialog) dialog.removeAttribute("open");
+}
+
+function setupDocumentPicker() {
+    var picker = $("documentPicker");
+    if (!picker) return;
+    picker.addEventListener("change", function () {
+        var file = picker.files && picker.files[0];
+        picker.value = "";
+        if (!file) return;
+        if (file.size > 100000) {
+            window.alert("Please choose a text file smaller than 100 KB.");
+            return;
+        }
+        var allowed = /\.(txt|md|csv)$/i.test(file.name);
+        if (!allowed) {
+            window.alert("For now, Documents supports .txt, .md, and .csv files.");
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function () {
+            var input = $("msg");
+            var existing = input ? input.value.trim() : "";
+            var imported = "[Document: " + file.name + "]\n" + String(reader.result || "");
+            setInputValue(existing ? existing + "\n\n" + imported : imported);
+        };
+        reader.onerror = function () { window.alert("Could not read that file."); };
+        reader.readAsText(file);
+    });
+}
+
 /* ----------------------------- DOM ready -------------------------------- */
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -89,6 +244,8 @@ document.addEventListener("DOMContentLoaded", function () {
     setupInput();
     setupClicks();
     setupDashboardResponsiveBehavior();
+    restoreChat(chatId);
+    setupDocumentPicker();
     updateCharacterCounter();
 });
 
@@ -169,23 +326,39 @@ function setupClicks() {
 
         switch (actionEl.getAttribute("data-action")) {
             case "new-chat":
-                window.location.reload();
+                startNewChat();
                 break;
 
             case "scroll-chat":
-                var chat = $("chat");
-
-                if (chat) {
-                    chat.scrollIntoView({ behavior: "smooth" });
-                }
+                openChatHistory();
                 break;
 
             case "focus-input":
-                if ($("msg")) $("msg").focus();
+                var documentInput = $("documentPicker");
+                if (documentInput) documentInput.click();
                 break;
 
             case "toggle-dashboard":
                 toggleDashboard();
+                break;
+
+            case "token-analytics":
+                openDashboard();
+                window.setTimeout(function () {
+                    var panel = document.querySelector(".token-panel");
+                    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+                }, 50);
+                break;
+
+            case "settings":
+                closeDashboard();
+                var settingsControls = document.querySelector(".composer-options");
+                if (settingsControls) {
+                    settingsControls.classList.add("settings-focus");
+                    window.setTimeout(function () { settingsControls.classList.remove("settings-focus"); }, 1800);
+                }
+                var firstToggle = $("piiToggle");
+                if (firstToggle) firstToggle.focus({ preventScroll: true });
                 break;
 
             case "close-dashboard":
@@ -199,6 +372,9 @@ function setupClicks() {
     if (refinedBtn) {
         refinedBtn.addEventListener("click", useRefinedPrompt);
     }
+
+    var closeHistory = $("closeHistory");
+    if (closeHistory) closeHistory.addEventListener("click", closeChatHistory);
 }
 
 function setInputValue(text) {
@@ -571,6 +747,11 @@ function addMessage(message, role) {
     wrapper.appendChild(bubble);
     chat.appendChild(wrapper);
 
+    if (!isRestoringChat && (role === "user" || role === "bot")) {
+        currentMessages.push({ role: role, content: text });
+        saveCurrentChat();
+    }
+
     chat.scrollTop = chat.scrollHeight;
 
     return wrapper;
@@ -590,6 +771,13 @@ function updateLastUserMessage(message) {
 
     if (bubble) {
         bubble.textContent = String(message || "");
+        for (var i = currentMessages.length - 1; i >= 0; i--) {
+            if (currentMessages[i].role === "user") {
+                currentMessages[i].content = String(message || "");
+                saveCurrentChat();
+                break;
+            }
+        }
     }
 }
 
