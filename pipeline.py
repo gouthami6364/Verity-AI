@@ -7,6 +7,7 @@ Flow:
     User message
         -> PII redaction
         -> Decide whether this is a shopping request
+        -> Normalize common shopping follow-ups
         -> Update shopping context only for shopping turns
         -> Search products only for shopping turns
         -> Generate a natural response
@@ -23,69 +24,53 @@ from token_tracker import TokenBudgetTracker
 from product_search import search_products
 
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_URL = os.getenv(
+    "GROQ_URL",
+    "https://api.groq.com/openai/v1/chat/completions",
+)
 
 MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 CONTEXT_LIMIT = int(os.getenv("CONTEXT_LIMIT", "131072"))
 
-# Cost in rupees per 1 million tokens. Adjust to the model's actual pricing.
+# Estimated cost in rupees per 1 million tokens. Adjust to your provider pricing.
 INPUT_COST_INR_PER_M = float(os.getenv("INPUT_COST_INR_PER_M", "13.2"))
 OUTPUT_COST_INR_PER_M = float(os.getenv("OUTPUT_COST_INR_PER_M", "52.8"))
-
-
 
 
 BASE_SYSTEM = """
 You are Verity AI, a friendly, natural, general-purpose AI assistant.
 
-Respond directly to what the user asks. Sound conversational and
-human, not like a formal report or an article.
+Respond directly to what the user asks. Sound conversational and human,
+not like a formal report or an article.
 
 STYLE RULES:
 - For simple requests, give a simple, direct answer.
-- Do not add unnecessary introductions such as "Here are a few
-  of my favorite..." or "Certainly! I'd be happy to help."
-- Avoid unnecessary headings, summaries, conclusions, and follow-up
-  offers.
+- Avoid unnecessary introductions, headings, summaries, and follow-up offers.
 - Use plain text by default.
-- Avoid Markdown formatting such as **bold**, ## headings, tables,
-  and horizontal separators unless the user asks for formatted output.
-- Use bullet points only when they genuinely make the answer easier
-  to read.
-- Do not make every answer long. Match the length to the question.
-- For complex questions, explain things clearly and in enough detail.
-- Never force every answer into a fixed number of sentences.
-
-You are a general-purpose assistant, not just a shopping assistant.
-Help with general questions, writing, learning, coding, ideas,
-and everyday conversation.
-
-Only search for products when the user asks to find, buy, compare,
-or get recommendations for products.
-
-Be helpful, accurate, and natural.
+- Use Markdown only when it genuinely improves readability.
+- Match the length of the answer to the user's request.
+- Help with general questions, writing, learning, coding, ideas, and everyday tasks.
+- Only search for products when the user asks to find, buy, compare, or get recommendations.
+- Use the conversation history when resolving short follow-up messages.
+- Never claim that products or prices were verified unless the product search returned them.
 """
 
-
-
-
-
 SHOPPING_SYSTEM = """
-The user is asking about shopping or following up on a shopping request.
+The user is shopping or following up on an existing shopping request.
 
-Use the supplied shopping context when relevant.
-Never invent products, prices, or search results.
-
-The application displays matching products separately.
-Respond naturally and directly to the user's message.
-Do not add unnecessary introductions, headings, or summaries.
+Use the supplied shopping context and conversation history.
+A short preference such as "I prefer blue ones" refers to the current product
+category unless the user clearly changes the category.
+Preserve existing constraints, including budget, brand, size, and category,
+unless the user explicitly changes or removes them.
+Never invent products, prices, search results, or product attributes.
+The application may display matching products separately.
+Respond naturally and directly. Do not add unnecessary introductions or headings.
 If no matching products were found, explain that briefly when relevant.
 """
 
 
-
-# Explicit phrases are preferred so that ordinary mentions of products
-# do not automatically turn every conversation into shopping.
+# Explicit product-shopping phrases that can start a search.
 SHOPPING_INTENT_PATTERN = re.compile(
     r"\b("
     r"find me|find|search for|look for|looking for|shop for|shopping for|"
@@ -95,30 +80,42 @@ SHOPPING_INTENT_PATTERN = re.compile(
     r"price of|cost of|how much is|how much does|"
     r"under ₹?\s*\d|below ₹?\s*\d|over ₹?\s*\d|above ₹?\s*\d|"
     r"cheapest|best deal|"
-    r"kurta|saree|sari|t shirt|t-shirt|shirt|jeans|trousers|"
-    r"shoes|sneakers|dress|jacket|coat|laptop|smartphone|mobile phone|"
-    r"headphones|earbuds|smartwatch|watch|handbag|backpack|"
-    r"books|book|chair|sofa|fridge|refrigerator|"
+    r"kurta|saree|sari|t[\s-]?shirt|shirt|jeans|trousers|"
+    r"running shoes|shoes|sneakers|dress|jacket|coat|laptop|"
+    r"smartphone|mobile phone|headphones|earbuds|smartwatch|watch|"
+    r"handbag|backpack|books|book|chair|sofa|fridge|refrigerator|"
     r"washing machine|camera|tablet|sunglasses"
     r")\b",
     re.IGNORECASE,
 )
 
-# These phrases only count as shopping follow-ups when there is an existing
-# shopping category in ContextLock. This helps "make it shorter" or
-# "tell me more" remain normal conversation.
+# These phrases are shopping follow-ups only if a shopping category already exists.
 SHOPPING_FOLLOWUP_PATTERN = re.compile(
     r"\b("
     r"cheaper|more expensive|lower price|higher price|"
     r"under ₹?\s*\d|below ₹?\s*\d|over ₹?\s*\d|above ₹?\s*\d|"
     r"show more|more options|other options|similar ones|"
-    r"different color|another color|in red|in blue|"
+    r"different color|another color|"
+    r"in red|in blue|in green|in black|in white|in pink|in yellow|"
+    r"in brown|in grey|in gray|"
     r"change the color|change the size|"
     r"same brand|another brand|"
     r"only show|filter by|remove the filter|"
-    r"those products|these products|those ones|these ones"
+    r"those products|these products|those ones|these ones|"
+    r"i prefer|i'd prefer|i would prefer|"
+    r"i want|i'd like|i would like|"
+    r"my preference is|"
+    r"blue ones|red ones|green ones|black ones|white ones|pink ones|"
+    r"yellow ones|brown ones|grey ones|gray ones|"
+    r"make them|make it|"
+    r"smaller size|larger size|bigger size|size \w+"
     r")\b",
     re.IGNORECASE,
+)
+
+COLOR_NAMES = (
+    "red", "blue", "green", "black", "white", "pink", "yellow",
+    "brown", "grey", "gray", "purple", "orange", "navy", "beige",
 )
 
 
@@ -130,15 +127,32 @@ def _has_shopping_category(state):
     return isinstance(category, str) and bool(category.strip())
 
 
-def is_shopping_request(message, shopping_state=None):
+def normalize_shopping_followup(message):
     """
-    Basic shopping-intent detection.
+    Normalize common follow-up phrasing to simpler phrases that a context parser
+    can recognize. For example, "I prefer blue ones" becomes "in blue".
+    """
+    text = (message or "").strip()
 
-    This is deliberately conservative, not a perfect language classifier.
-    Explicit shopping terms can start a search. Short product queries such
-    as "blue kurta" are also supported when a category word is present.
-    Shopping refinements are recognized only when a prior category exists.
-    """
+    color_pattern = re.compile(
+        r"\b(?:i prefer|i'd prefer|i would prefer|"
+        r"i want|i'd like|i would like|my preference is)\s+"
+        r"(" + "|".join(map(re.escape, COLOR_NAMES)) + r")"
+        r"(?:\s+(?:ones?|shoes?|items?|products?))?\b",
+        re.IGNORECASE,
+    )
+
+    match = color_pattern.search(text)
+    if match:
+        color = match.group(1).lower()
+        # Preserve other constraints in the same message, if present.
+        text = color_pattern.sub(f"in {color}", text, count=1)
+
+    return text
+
+
+def is_shopping_request(message, shopping_state=None):
+    """Detect explicit shopping requests and follow-ups to an active search."""
     message = (message or "").strip()
     if not message:
         return False
@@ -152,15 +166,14 @@ def is_shopping_request(message, shopping_state=None):
     ):
         return True
 
-    # Support compact searches such as "blue kurta" or "Nike shoes"
-    # without requiring the user to type "find" or "show me".
+    # Compact queries such as "blue kurta" or "Nike shoes".
     category_words = re.compile(
         r"\b("
-        r"kurta|saree|sari|shirt|jeans|trousers|shoes|sneakers|dress|"
-        r"jacket|coat|laptop|smartphone|headphones|earbuds|smartwatch|"
-        r"watch|handbag|backpack|book|chair|sofa|camera|tablet|"
-        r"sunglasses|fridge|refrigerator|"
-        r"washing machine"
+        r"kurta|saree|sari|t[\s-]?shirt|shirt|jeans|trousers|"
+        r"running shoes|shoes|sneakers|dress|jacket|coat|laptop|"
+        r"smartphone|headphones|earbuds|smartwatch|watch|handbag|"
+        r"backpack|book|chair|sofa|camera|tablet|sunglasses|"
+        r"fridge|refrigerator|washing machine"
         r")\b",
         re.IGNORECASE,
     )
@@ -204,16 +217,13 @@ def call_llm(system, history, user_message):
             )
 
         if response.status_code != 200:
-            # Avoid returning provider response bodies, which may contain
-            # implementation details or request information.
             return f"AI service error ({response.status_code}).", None
 
         data = response.json()
+        choices = data.get("choices", [])
         reply = (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content")
-            or ""
+            choices[0].get("message", {}).get("content") or ""
+            if choices else ""
         ).strip()
 
         if not reply:
@@ -260,9 +270,6 @@ class VerityAI:
         self.lock = ContextLock()
         self.tracker = TokenBudgetTracker()
         self.history = []
-
-        # Keep the last search available internally for shopping refinements.
-        # It is returned to the frontend only on shopping turns.
         self.last_products = None
         self.session_cost_inr = 0.0
 
@@ -294,13 +301,10 @@ class VerityAI:
         if not isinstance(raw_message, str):
             raw_message = ""
 
-        # 1. Redact sensitive data before intent detection, context updates,
-        # token tracking, conversation history, or sending text to the LLM.
+        # Redact before intent detection, context updates, history, and LLM use.
         safe_message, pii_found = redact(raw_message)
 
-        # 2. Decide whether this message belongs to a shopping interaction.
-        # Inspect existing state before updating it, so ordinary chat does not
-        # accidentally change persistent product filters.
+        # Detect follow-ups against the state BEFORE updating it.
         shopping_request = is_shopping_request(
             safe_message,
             self.lock.state,
@@ -308,46 +312,48 @@ class VerityAI:
 
         filter_changes = []
 
-        # 3. Only update ContextLock and search products for shopping turns.
         if shopping_request:
-            self.lock.update(safe_message)
+            # Normalize preference phrasing for the existing context parser.
+            context_message = normalize_shopping_followup(safe_message)
+
+            self.lock.update(context_message)
             filter_changes = list(self.lock.changes or [])
 
-            # Search on each shopping turn so refinements can refresh results.
+            # Search again after every shopping request/refinement.
             self.last_products = search_products(self.lock.state)
             products = self.last_products
         else:
-            # Do not expose stale products as results for unrelated chat.
             products = None
 
-        # 4. Build a general-purpose prompt. Add shopping instructions and
-        # filters only while handling a shopping request.
         system = BASE_SYSTEM
 
         if shopping_request:
             system += "\n\n" + SHOPPING_SYSTEM
             context_prompt = self.lock.to_prompt()
+
             if context_prompt:
                 system += "\n\nCurrent shopping context:\n" + context_prompt
 
             if products is not None:
-                item_count = len(products.get("items", []))
+                items = products.get("items", []) if isinstance(products, dict) else []
+                item_count = len(items)
+
                 if item_count:
                     system += (
-                        f"\n\nSearch status: {item_count} verified matching "
-                        "product(s) are included in the response payload and "
-                        "may be displayed separately by the application."
+                        f"\n\nSearch status: {item_count} matching product(s) "
+                        "were returned by the product search and may be shown "
+                        "separately by the application. Do not invent details "
+                        "that are not in the supplied shopping context."
                     )
                 else:
-                    note = products.get("note", "")
+                    note = products.get("note", "") if isinstance(products, dict) else ""
                     system += (
-                        "\n\nSearch status: no verified matching products "
-                        "were returned."
+                        "\n\nSearch status: no matching products were returned."
                     )
                     if note:
                         system += "\nSearch note: " + str(note)
 
-        # 5. Token tracking.
+        # Estimate tokens and compress history before constructing the LLM call.
         before = self.tracker.breakdown(
             system,
             self.history,
@@ -367,14 +373,13 @@ class VerityAI:
             safe_message,
         )
 
-        # 6. Generate a natural reply for both general chat and shopping.
         reply, usage = call_llm(system, self.history, safe_message)
 
-        # 7. Save only redacted user text and the assistant response.
+        # Store only redacted messages. This history is retained by the
+        # persistent VerityAI instance managed by server.py.
         self.history.append({"role": "user", "content": safe_message})
         self.history.append({"role": "assistant", "content": reply})
 
-        # 8. Return fields expected by the existing dashboard/frontend.
         return {
             "reply": reply,
             "safe_message": safe_message,
