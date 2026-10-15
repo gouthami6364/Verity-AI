@@ -37,12 +37,13 @@ ALLOWED_FIELDS = {
     "color",
     "material",
     "size",
+    "gender",
     "min_price",
     "max_price",
 }
 
 NUMERIC_FIELDS = {"min_price", "max_price"}
-LOWERCASE_FIELDS = {"category", "color", "material"}
+LOWERCASE_FIELDS = {"category", "color", "material", "gender"}
 
 
 PROMPT = """
@@ -65,6 +66,7 @@ Schema:
     "color": null,
     "material": null,
     "size": null,
+    "gender": null,
     "min_price": null,
     "max_price": null
   },
@@ -107,18 +109,24 @@ Rules:
 9. Keep existing constraints unchanged unless the latest message
    explicitly changes or removes them.
 
-10. "under 3000", "below 3000", "less than 3000"
+10. Interpret audience/gender terms as the gender field:
+    women's, women, ladies, female, girls -> "women";
+    men's, men, gents, male, boys -> "men";
+    unisex -> "unisex".
+    A request such as "for women" or "make it for men" changes only gender.
+
+11. "under 3000", "below 3000", "less than 3000"
     means max_price = 3000.
 
-11. "above 2000", "over 2000", "more than 2000"
+12. "above 2000", "over 2000", "more than 2000"
     means min_price = 2000.
 
-12. If the user says "remove the brand" or "no brand",
+13. If the user says "remove the brand" or "no brand",
     put "brand" in remove.
 
-13. Use plain values, not explanations. Prices are plain numbers.
+14. Use plain values, not explanations. Prices are plain numbers.
 
-14. If the message contains no shopping constraint, return:
+15. If the message contains no shopping constraint, return:
 {
   "set": {},
   "remove": []
@@ -188,6 +196,7 @@ FIELD_ALIASES = {
     "size": "size",
     "material": "material",
     "category": "category",
+    "gender": "gender",
 }
 
 
@@ -406,14 +415,25 @@ class ContextLock:
         # Explicitly remove fields.
         for match in re.finditer(
             r"(?:remove|clear|drop|without|no)\s+(?:the\s+)?"
-            r"(brand|colou?r|size|material|category|price)",
+            r"(brand|colou?r|size|material|category|gender|sex|price)",
             text,
         ):
             word = match.group(1)
             if word == "price":
                 result["remove"].extend(["min_price", "max_price"])
-            else:
+            elif word in FIELD_ALIASES:
                 result["remove"].append(FIELD_ALIASES[word])
+            elif word == "sex":
+                result["remove"].append("gender")
+
+        # Apparel audience/gender filter.
+        if "gender" not in result["remove"]:
+            if re.search(r"\b(?:unisex)\b", text):
+                result["set"]["gender"] = "unisex"
+            elif re.search(r"\b(?:women(?:'s)?|womens|ladies|lady|female|girls?)\b", text):
+                result["set"]["gender"] = "women"
+            elif re.search(r"\b(?:men(?:'s)?|mens|gents|gentlemen|male|boys?)\b", text):
+                result["set"]["gender"] = "men"
 
         # Extract a category when it is explicitly mentioned.
         # This local list is intentionally broad; the LLM handles dynamic categories.
@@ -462,7 +482,9 @@ class ContextLock:
                 brand = brand_match.group(1).strip(" .,!?:;")
                 # Stop at common constraint words.
                 brand = re.split(
-                    r"\b(?:under|below|over|above|in|with|size|color|colour)\b",
+                    r"\b(?:under|below|over|above|in|with|size|color|colour|for|women(?:'s)?|womens|men(?:'s)?|mens|female|male|unisex|ladies|gents|"
+                    + "|".join(re.escape(word) for word in sorted(categories + COLORS, key=len, reverse=True))
+                    + r")\b",
                     brand,
                     maxsplit=1,
                     flags=re.IGNORECASE,
