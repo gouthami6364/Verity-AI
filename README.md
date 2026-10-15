@@ -38,6 +38,8 @@ Secure backend API
 
 Groq-powered AI responses
 
+Product-audience filtering for women, men, and unisex items
+
 Privacy and Security
 
 Privacy is one of the main goals of Verity AI.
@@ -62,7 +64,7 @@ Example
 
 Original:
 
-My email is example@gmail.com
+My email is [example@gmail.com](mailto:example@gmail.com)
 
 Protected:
 
@@ -71,44 +73,44 @@ My email is [EMAIL REDACTED]
 How Verity AI Works
 
 User Message
-      ↓
+↓
 PII Detection
-      ↓
+↓
 PII Redaction
-      ↓
+↓
 Context Processing
-      ↓
+↓
 Token Analysis
-      ↓
+↓
 AI Model
-      ↓
+↓
 Secure Response
 
 1. User Message
 
 The user enters a message through the Verity AI web interface.
 
-2. PII Detection
+1. PII Detection
 
 The backend analyzes the message for supported types of personally identifiable information.
 
-3. PII Redaction
+1. PII Redaction
 
 Sensitive information is replaced with protected placeholders.
 
-4. Context Processing
+1. Context Processing
 
 The system manages conversation context so that previous safe conversation information can be used when generating responses.
 
-5. Token Analysis
+1. Token Analysis
 
 The system tracks token usage and estimates the associated cost.
 
-6. AI Processing
+1. AI Processing
 
 The protected message is sent to the configured AI model through the Groq API.
 
-7. Secure Response
+1. Secure Response
 
 The generated response is returned to the user through the Verity AI interface.
 
@@ -252,8 +254,8 @@ Verity-AI/
 ├── index.html
 │
 ├── static/
-│   ├── style.css
-│   └── script.js
+│ ├── style.css
+│ └── script.js
 │
 └── README.md
 
@@ -351,11 +353,11 @@ Installation
 
 1. Clone the Repository
 
-git clone https://github.com/gouthami6364/Verity-AI.git
+git clone [https://github.com/gouthami6364/Verity-AI.git](https://github.com/gouthami6364/Verity-AI.git)
 
 cd Verity-AI
 
-2. Create a Virtual Environment
+1. Create a Virtual Environment
 
 Windows:
 
@@ -367,11 +369,11 @@ macOS/Linux:
 python -m venv venv
 source venv/bin/activate
 
-3. Install Dependencies
+1. Install Dependencies
 
 pip install -r requirement.txt
 
-4. Configure the API Key
+1. Configure the API Key
 
 Verity AI uses the Groq API for AI model responses.
 
@@ -381,13 +383,13 @@ GROQ_API_KEY
 
 Do not commit your API key to GitHub.
 
-5. Run the Application
+1. Run the Application
 
 python server.py
 
 The application will normally be available at:
 
-http://127.0.0.1:5000
+[http://127.0.0.1:5000](http://127.0.0.1:5000)
 
 Environment Variables
 
@@ -448,13 +450,13 @@ Privacy Approach
 Verity AI follows a privacy-first processing approach.
 
 Sensitive User Input
-        ↓
+↓
 Local PII Detection
-        ↓
+↓
 PII Redaction
-        ↓
+↓
 Protected Prompt
-        ↓
+↓
 AI Processing
 
 This approach helps reduce the amount of sensitive information that is sent to the external AI service.
@@ -493,7 +495,7 @@ Example Workflow
 
 A user enters:
 
-Please send the report to my email example@gmail.com
+Please send the report to my email [example@gmail.com](mailto:example@gmail.com)
 
 Verity AI detects the email address.
 
@@ -566,7 +568,7 @@ Author
 Gouthami
 
 GitHub:
-https://github.com/gouthami6364/Verity-AI
+[https://github.com/gouthami6364/Verity-AI](https://github.com/gouthami6364/Verity-AI)
 
 Verity AI
 
