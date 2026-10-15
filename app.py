@@ -1,6 +1,9 @@
-
 import logging
 import re
+import threading
+import time
+import uuid
+from collections import OrderedDict
 
 from flask import Flask, render_template, request, jsonify
 from pipeline import VerityAI
@@ -16,6 +19,48 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_TOKENS = 131072
+MAX_SESSIONS = 500
+SESSION_TTL = 60 * 60 * 24  # 24 hours
+sessions = OrderedDict()
+sessions_lock = threading.RLock()
+
+
+class ChatSession:
+    """One AI instance, including context and history, per browser conversation."""
+
+    def __init__(self):
+        self.bot = VerityAI()
+        self.lock = threading.RLock()
+        self.last_access = time.time()
+
+
+def _get_chat_id(data):
+    chat_id = data.get("chat_id") or data.get("session_id")
+    if not isinstance(chat_id, str):
+        chat_id = ""
+    chat_id = chat_id.strip()[:128]
+    return chat_id or str(uuid.uuid4())
+
+
+def _get_session(chat_id):
+    now = time.time()
+    with sessions_lock:
+        expired = [key for key, value in sessions.items()
+                   if now - value.last_access > SESSION_TTL]
+        for key in expired:
+            sessions.pop(key, None)
+
+        chat = sessions.get(chat_id)
+        if chat is not None:
+            chat.last_access = now
+            sessions.move_to_end(chat_id)
+            return chat
+
+        while len(sessions) >= MAX_SESSIONS:
+            sessions.popitem(last=False)
+        chat = ChatSession()
+        sessions[chat_id] = chat
+        return chat
 
 
 def estimate_tokens(text: str) -> int:
@@ -26,26 +71,14 @@ def estimate_tokens(text: str) -> int:
 def redact(text: str):
     """Basic PII redaction for email, Indian PAN, and Indian phone numbers."""
     count = 0
-
     patterns = [
-        (
-            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-            "[EMAIL REDACTED]",
-        ),
-        (
-            r"\b[A-Z]{5}[0-9]{4}[A-Z]\b",
-            "[PAN REDACTED]",
-        ),
-        (
-            r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)",
-            "[PHONE REDACTED]",
-        ),
+        (r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[EMAIL REDACTED]"),
+        (r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", "[PAN REDACTED]"),
+        (r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)", "[PHONE REDACTED]"),
     ]
-
     for pattern, replacement in patterns:
         text, matches = re.subn(pattern, replacement, text)
         count += matches
-
     return text, count
 
 
@@ -53,19 +86,14 @@ def normalize_products(products):
     """Normalize product results for the frontend."""
     if products is None:
         return []
-
     if isinstance(products, list):
         return products
-
     if isinstance(products, dict):
         items = products.get("items")
         if isinstance(items, list):
             return items
-
-        # Some pipelines return a single product as a dictionary.
         if any(key in products for key in ("title", "name", "link", "url")):
             return [products]
-
     return []
 
 
@@ -78,95 +106,70 @@ def index():
 def analyze():
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
-
     if not message:
         return jsonify({"error": "Empty message"}), 400
-
     refined = message[0].upper() + message[1:]
-
     if not refined.endswith(("?", ".", "!")):
         refined += "."
-
     return jsonify({"refined_prompt": refined})
 
 
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
-    message = (data.get("message") or "").strip()
-
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid request"}), 400
+    message = data.get("message") or ""
+    if not isinstance(message, str):
+        return jsonify({"error": "Message must be text"}), 400
+    message = message.strip()
     if not message:
         return jsonify({"error": "Empty message"}), 400
 
+    chat_id = _get_chat_id(data)
     pii_protection = data.get("pii_protection", True)
-
     if pii_protection:
-        safe_message, pii_count = redact(message)
+        safe_message, pii_count = redact(message[:10000])
     else:
-        safe_message, pii_count = message, 0
+        safe_message, pii_count = message[:10000], 0
 
-  
     try:
-        # Initialize the AI pipeline instance.
-        verity = VerityAI()
-        result = verity.handle(safe_message)
+        session = _get_session(chat_id)
+        with session.lock:
+            session.last_access = time.time()
+            result = session.bot.handle(safe_message)
 
         if isinstance(result, dict):
-            answer = (
-                result.get("response")
-                or result.get("reply")
-                or result.get("answer")
-                or ""
-            )
+            answer = result.get("response") or result.get("reply") or result.get("answer") or ""
             products = normalize_products(result.get("products", []))
             warnings = result.get("warnings", [])
             waste_warnings = result.get("waste_warnings", [])
-
         elif isinstance(result, str):
-            answer = result
-            products = []
-            warnings = []
-            waste_warnings = []
-
+            answer, products, warnings, waste_warnings = result, [], [], []
         else:
-            logger.error(
-                "Unexpected VerityAI.handle result type: %s",
-                type(result).__name__,
-            )
-            return jsonify({
-                "error": "The AI pipeline returned an unexpected response."
-            }), 500
+            logger.error("Unexpected VerityAI.handle result type: %s", type(result).__name__)
+            return jsonify({"error": "The AI pipeline returned an unexpected response."}), 500
 
         if not answer:
             answer = "I couldn't generate a response. Please try again."
-
         tokens = estimate_tokens(safe_message) + estimate_tokens(answer)
-        token_percent = min(100, tokens / MAX_TOKENS * 100)
-
         return jsonify({
             "response": answer,
             "reply": answer,
             "safe_message": safe_message,
+            "chat_id": chat_id,
             "tokens": tokens,
-            "token_percent": token_percent,
+            "token_percent": min(100, tokens / MAX_TOKENS * 100),
             "cost": tokens * 0.000001,
-            "pii": (
-                f"{pii_count} item(s) redacted"
-                if pii_count
-                else "No PII detected"
-            ),
+            "pii": f"{pii_count} item(s) redacted" if pii_count else "No PII detected",
             "pii_found": pii_count,
             "warnings": warnings,
             "waste_warnings": waste_warnings,
             "products": products,
         })
-
     except Exception:
         logger.exception("Error processing /chat request")
-        return jsonify({
-            "error": "The request could not be processed. Check the server logs."
-        }), 500
-
+        return jsonify({"error": "The request could not be processed. Check the server logs."}), 500
 
 
 @app.route("/health")
