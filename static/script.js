@@ -1049,7 +1049,9 @@ function updateDashboard(data, options) {
             Math.min(100, tokenPercent)
         );
 
-        setText("tokenPercent", Math.round(tokenPercent) + "%");
+        // Token usage is usually a small fraction of the full context window.
+        // Whole-number rounding made valid values such as 0.38% appear as 0%.
+        setText("tokenPercent", tokenPercent.toFixed(2) + "%");
 
         var circle = $("tokenCircle");
 
