@@ -178,11 +178,41 @@ def _matches_price(product, filters):
     return True
 
 
+def _matches_gender(product, gender):
+    """Exclude listings explicitly tagged for the opposite gender."""
+    if not gender:
+        return True
+
+    text = " ".join([
+        str(product.get("title", "")),
+        str(product.get("gender", "")),
+        str(product.get("description", "")),
+    ])
+
+    if _matches_value(text, "unisex"):
+        return True
+
+    if _normal(gender) == "women":
+        return not any(
+            _matches_value(text, term)
+            for term in ("men", "male", "boys", "gents")
+        )
+
+    if _normal(gender) == "men":
+        return not any(
+            _matches_value(text, term)
+            for term in ("women", "female", "girls", "ladies")
+        )
+
+    return True
+
+
 def _matches_all(product, filters):
     return (
         _matches_category(product, filters.get("category"))
         and _matches_color(product, filters.get("color"))
         and _matches_brand(product, filters.get("brand"))
+        and _matches_gender(product, filters.get("gender"))
         and _matches_price(product, filters)
     )
 
@@ -196,7 +226,7 @@ def _search_serpapi(filters, api_key):
 
     query_parts = []
 
-    for field in ("brand", "color", "material", "category", "size"):
+    for field in ("gender", "brand", "color", "material", "category", "size"):
         value = filters.get(field)
 
         if value:
@@ -318,7 +348,7 @@ def search_products(filters):
     Search products using ContextLock's current filter state.
 
     Expected filters may include:
-        category, color, brand, material, size,
+        category, color, brand, material, size, gender,
         min_price, max_price
 
     Returns:
@@ -374,7 +404,7 @@ def search_products(filters):
     if not clean:
         requested = []
 
-        for field in ("brand", "color", "category"):
+        for field in ("gender", "brand", "color", "category"):
             if filters.get(field):
                 requested.append(str(filters[field]))
 
