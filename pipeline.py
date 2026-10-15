@@ -296,29 +296,37 @@ class VerityAI:
             "cost_inr": round(self.session_cost_inr, 6),
         }
 
-    def handle(self, raw_message):
+    def handle(
+        self,
+        raw_message,
+        pii_protection=True,
+        context_lock=True,
+        token_manager=True,
+    ):
         """Process one user message and return the response payload."""
         if not isinstance(raw_message, str):
             raw_message = ""
 
-        # Redact before intent detection, context updates, history, and LLM use.
-        safe_message, pii_found = redact(raw_message)
+        # Redact before intent detection, context updates, history, and LLM use
+        # only when the user has enabled the privacy filter.
+        if pii_protection:
+            safe_message, pii_found = redact(raw_message)
+        else:
+            safe_message, pii_found = raw_message, []
 
         # Normalize follow-ups such as "I prefer blue ones" into a phrase
         # that ContextLock can extract, e.g. "in blue".
         context_message = normalize_shopping_followup(safe_message)
 
         # Detect follow-ups against the existing context BEFORE updating it.
-        shopping_request = is_shopping_request(
-            context_message,
-            self.lock.state,
-        )
+        shopping_state = self.lock.state if context_lock else {}
+        shopping_request = is_shopping_request(context_message, shopping_state)
 
         # Always define these so the response payload works for non-shopping turns.
         filter_changes = []
         products = None
 
-        if shopping_request:
+        if shopping_request and context_lock:
             # Update the context exactly once, preserving existing constraints.
             self.lock.update(context_message)
             filter_changes = list(self.lock.changes or [])
@@ -330,12 +338,23 @@ class VerityAI:
             # Search again after each shopping request or refinement.
             self.last_products = search_products(self.lock.state)
             products = self.last_products
+        elif shopping_request:
+            # With Context Lock off, search this request only. Do not retain or
+            # apply constraints from prior shopping turns.
+            self.lock.changes = []
+            request_context = ContextLock()
+            request_context.update(context_message)
+            self.last_products = search_products(request_context.state)
+            products = self.last_products
 
         system = BASE_SYSTEM
 
         if shopping_request:
             system += "\n\n" + SHOPPING_SYSTEM
-            context_prompt = self.lock.to_prompt()
+            if context_lock:
+                context_prompt = self.lock.to_prompt()
+            else:
+                context_prompt = request_context.to_prompt()
 
             if context_prompt:
                 system += "\n\nCurrent shopping context:\n" + context_prompt
@@ -373,10 +392,10 @@ class VerityAI:
             self.history,
             safe_message,
         )
-        warnings = self.tracker.find_waste(
-            system,
-            self.history,
-            before,
+        warnings = (
+            self.tracker.find_waste(system, self.history, before)
+            if token_manager
+            else []
         )
 
         self.history = self.tracker.compress_history(self.history)
@@ -404,7 +423,7 @@ class VerityAI:
             "filters": dict(self.lock.state),
             "filter_changes": filter_changes,
             "shopping_active": shopping_request,
-            "tokens": self._build_tokens(after, usage),
+            "tokens": self._build_tokens(after, usage) if token_manager else None,
             "tokens_before": before,
             "tokens_after": after,
             "waste_warnings": warnings,
