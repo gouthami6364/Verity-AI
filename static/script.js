@@ -54,10 +54,12 @@ function isChecked(id, fallback) {
 }
 
 function getToggles() {
+    var audience = $("genderFilter");
     return {
         pii_protection: isChecked("piiToggle", true),
         context_lock: isChecked("contextToggle", true),
-        token_manager: isChecked("tokenToggle", true)
+        token_manager: isChecked("tokenToggle", true),
+        gender_filter: audience ? audience.value : ""
     };
 }
 
@@ -571,6 +573,11 @@ async function sendMessage() {
     refinementRequestId++;
 
     hideWelcome();
+
+    // Product cards belong to the immediately preceding shopping request only.
+    // Clear them as soon as the user starts a new turn (including code/general
+    // questions), rather than waiting for the next response to arrive.
+    renderProducts([]);
 
     var safeMessage = isChecked("piiToggle", true)
         ? maskPIIForAnalysis(message)
