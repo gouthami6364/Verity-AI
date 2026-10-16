@@ -20,6 +20,7 @@ import os
 import re
 import logging
 import requests
+from urllib.parse import quote_plus, urlparse
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,67 @@ def _normal(value):
     value = re.sub(r"\s+", " ", value)
 
     return value.strip()
+
+
+def _usable_http_url(value):
+    """Return a plausible public HTTP(S) URL, or an empty string."""
+    if not isinstance(value, str) or not value.strip():
+        return ""
+
+    value = value.strip()
+    if re.search(r"(?:XXXX+|YYYY+|PLACEHOLDER)", value, re.IGNORECASE):
+        return ""
+
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return ""
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        return ""
+
+    return value
+
+
+def _listing_link(item):
+    """Prefer an actual merchant offer; otherwise provide a safe search link."""
+    offers = item.get("offers")
+    if isinstance(offers, dict):
+        offers = [offers]
+
+    candidates = []
+    if isinstance(offers, list):
+        for offer in offers:
+            if isinstance(offer, dict):
+                candidates.extend((
+                    offer.get("link"),
+                    offer.get("offer_link"),
+                    offer.get("url"),
+                ))
+    candidates.extend((item.get("product_link"), item.get("link")))
+
+    for candidate in candidates:
+        url = _usable_http_url(candidate)
+        if not url:
+            continue
+        host = (urlparse(url).hostname or "").lower()
+        if host == "google.com" or host.endswith(".google.com"):
+            continue
+        return url, "retailer"
+
+    title = str(item.get("title") or "").strip()
+    if title:
+        return (
+            "https://www.google.com/search?tbm=shop&q=" + quote_plus(title),
+            "search",
+        )
+
+    return "", "unavailable"
 
 
 def _matches_value(text, value):
@@ -91,6 +153,36 @@ def _matches_category(product, category):
         "headphone": ("headphone", "headphones", "headset"),
         "earbud": ("earbud", "earbuds", "wireless earphones"),
         "sneaker": ("sneaker", "sneakers", "trainers"),
+        "heels": (
+            "heel", "heels", "high heel", "high heels", "block heel",
+            "block heels", "kitten heel", "kitten heels", "stiletto",
+            "stilettos", "pump", "pumps", "heeled sandal",
+            "heeled sandals", "wedge heel", "wedge heels",
+        ),
+        "heel": (
+            "heel", "heels", "high heel", "high heels", "block heel",
+            "block heels", "kitten heel", "kitten heels", "stiletto",
+            "stilettos", "pump", "pumps", "heeled sandal",
+            "heeled sandals", "wedge heel", "wedge heels",
+        ),
+        "high heels": (
+            "heel", "heels", "high heel", "high heels", "block heel",
+            "block heels", "kitten heel", "kitten heels", "stiletto",
+            "stilettos", "pump", "pumps", "heeled sandal",
+            "heeled sandals", "wedge heel", "wedge heels",
+        ),
+        "stilettos": (
+            "heel", "heels", "high heel", "high heels", "block heel",
+            "block heels", "kitten heel", "kitten heels", "stiletto",
+            "stilettos", "pump", "pumps", "heeled sandal",
+            "heeled sandals", "wedge heel", "wedge heels",
+        ),
+        "pumps": (
+            "heel", "heels", "high heel", "high heels", "block heel",
+            "block heels", "kitten heel", "kitten heels", "stiletto",
+            "stilettos", "pump", "pumps", "heeled sandal",
+            "heeled sandals", "wedge heel", "wedge heels",
+        ),
         "t shirt": ("t shirt", "tshirt", "tee shirt"),
         "jean": ("jean", "jeans", "denim jeans"),
     }
@@ -282,6 +374,7 @@ def _search_serpapi(filters, api_key):
 
         for item in raw_items:
             price_text = item.get("price") or ""
+            listing_url, link_type = _listing_link(item)
 
             product = {
                 "title": item.get("title", ""),
@@ -300,11 +393,8 @@ def _search_serpapi(filters, api_key):
                     or item.get("serpapi_thumbnail")
                     or ""
                 ),
-                "link": (
-                    item.get("product_link")
-                    or item.get("link")
-                    or ""
-                ),
+                "link": listing_url,
+                "link_type": link_type,
             }
 
             if not product["title"]:
