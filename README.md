@@ -6,7 +6,7 @@ The system detects personally identifiable information (PII) in user messages, r
 
 ## Live Demo
 
-[Visit Verity AI](https://verity-ai-zg23.onrender.com)
+[Visit Verity AI](https://verity-ai-i8lo.onrender.com/)
 
 Features
 
