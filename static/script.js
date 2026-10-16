@@ -26,6 +26,9 @@ function getStoredChatId() {
 var chatId = getStoredChatId();
 var currentMessages = [];
 var isRestoringChat = false;
+var activeChatEpoch = 0;
+var currentProducts = [];
+var currentDashboardState = null;
 
 var refinementTimer = null;
 var refinementRequestId = 0;
@@ -112,11 +115,14 @@ function saveCurrentChat() {
     try {
         var chats = readSavedChats();
         var firstUser = currentMessages.find(function (item) { return item.role === "user"; });
+        var previous = chats[chatId] || {};
         chats[chatId] = {
             id: chatId,
             title: firstUser ? firstUser.content.slice(0, 70) : "New chat",
             updated: Date.now(),
-            messages: currentMessages
+            messages: currentMessages,
+            products: currentProducts,
+            dashboard: currentDashboardState || previous.dashboard || null
         };
         sessionStorage.setItem("verity_chats", JSON.stringify(chats));
         sessionStorage.setItem("verity_active_chat", chatId);
@@ -126,11 +132,20 @@ function saveCurrentChat() {
 }
 
 function restoreChat(id) {
+    activeChatEpoch++;
     chatId = id || makeChatId();
     var chats = readSavedChats();
     var saved = chats[chatId];
     currentMessages = saved && Array.isArray(saved.messages) ? saved.messages : [];
+    currentProducts = saved && Array.isArray(saved.products) ? saved.products : [];
+    currentDashboardState = saved && saved.dashboard ? saved.dashboard : null;
     try { sessionStorage.setItem("verity_active_chat", chatId); } catch (_) {}
+
+    resetDashboard();
+    renderProducts(currentProducts, { skipSave: true });
+    if (currentDashboardState) {
+        updateDashboard(currentDashboardState, { skipPersist: true });
+    }
 
     var chat = $("chat");
     if (!chat) return;
@@ -157,6 +172,8 @@ function startNewChat() {
     saveCurrentChat();
     chatId = makeChatId();
     currentMessages = [];
+    currentProducts = [];
+    currentDashboardState = null;
     try { sessionStorage.setItem("verity_active_chat", chatId); } catch (_) {}
     restoreChat(chatId);
     renderProducts([]);
@@ -562,6 +579,9 @@ async function sendMessage() {
 
     if (!message) return;
 
+    var requestChatId = chatId;
+    var requestEpoch = activeChatEpoch;
+
     isSending = true;
 
     if (sendButton) {
@@ -622,6 +642,9 @@ async function sendMessage() {
         } catch (_) {
             throw new Error("The server returned an invalid response.");
         }
+
+        // Ignore a response that arrived after the user opened another chat.
+        if (requestEpoch !== activeChatEpoch || requestChatId !== chatId) return;
 
         removeTypingIndicator();
 
@@ -819,7 +842,10 @@ function removeTypingIndicator() {
 
 /* ----------------------------- Product rendering ------------------------ */
 
-function renderProducts(products) {
+function renderProducts(products, options) {
+    options = options || {};
+    currentProducts = Array.isArray(products) ? products.slice() : [];
+
     var section = $("productsSection");
     var container = $("products");
 
@@ -957,7 +983,9 @@ function renderProducts(products) {
             link.href = productUrl;
             link.target = "_blank";
             link.rel = "noopener noreferrer";
-            link.textContent = "View product";
+            link.textContent = product.link_type === "search"
+                ? "Search this listing"
+                : "View retailer listing";
 
             details.appendChild(link);
         } else {
@@ -974,9 +1002,48 @@ function renderProducts(products) {
     });
 
     section.hidden = container.children.length === 0;
+
+    if (!options.skipSave) saveCurrentChat();
 }
 
 /* ----------------------------- Dashboard updates ------------------------ */
+
+function resetDashboard() {
+    setText("tokens", "0 / " + formatNumber(MAX_TOKENS));
+    setText("tokenPercent", "0.00%");
+    setText("tokenCost", CURRENCY + "0.000000");
+    setText("activityTokens", "No usage recorded yet");
+    setText("pii", "No PII detected");
+    setText("activityPii", "Waiting for a message");
+    setText("memory", "No active context");
+    setText("filterChanges", "No changes");
+    setText("warn", "No warnings");
+
+    var circle = $("tokenCircle");
+    if (circle) circle.style.setProperty("--usage", "0%");
+    var progress = $("tokenProgress");
+    if (progress) progress.style.width = "0%";
+}
+
+function persistDashboardState(data) {
+    var fields = [
+        "tokens", "token_percent", "cost", "pii", "pii_status", "pii_found",
+        "context_state", "context_active", "filter_changes", "shopping_active",
+        "features", "warnings", "waste_warnings"
+    ];
+    var snapshot = {};
+
+    fields.forEach(function (field) {
+        if (Object.prototype.hasOwnProperty.call(data, field)) {
+            snapshot[field] = data[field];
+        }
+    });
+
+    if (Object.keys(snapshot).length) {
+        currentDashboardState = snapshot;
+        saveCurrentChat();
+    }
+}
 
 function updateDashboard(data, options) {
     if (!data || typeof data !== "object") return;
@@ -1184,6 +1251,8 @@ function updateDashboard(data, options) {
     if (features.context_lock === false) {
         setText("memory", "Context Lock disabled");
     }
+
+    if (!options.skipPersist) persistDashboardState(data);
 }
 
 /* ----------------------------- Context Lock dashboard ------------------- */
