@@ -103,8 +103,8 @@ Rules:
    change category to jeans.
 
 8. If the user explicitly changes the brand:
-   "show Nike instead"
-   change brand to Nike.
+   "show Nike instead" or "change the brand to Adidas"
+   set the brand to the new value and replace the previous brand.
 
 9. Keep existing constraints unchanged unless the latest message
    explicitly changes or removes them.
@@ -438,6 +438,8 @@ class ContextLock:
         # Extract a category when it is explicitly mentioned.
         # This local list is intentionally broad; the LLM handles dynamic categories.
         categories = [
+            "kitten heels", "block heels", "high heels", "stilettos",
+            "heels", "pumps", "heeled sandals", "sandals", "flats",
             "running shoes", "sneakers", "shoes", "t-shirt", "t shirt",
             "headphones", "earbuds", "smartphone", "mobile phone",
             "washing machine", "refrigerator", "fridge", "laptop",
@@ -473,13 +475,27 @@ class ContextLock:
         # arbitrary words as brands in fallback mode.
         if "brand" not in result["remove"]:
             brand_match = re.search(
-                r"\b(?:brand\s+is|brand:|show|prefer|want)\s+"
+                r"\b(?:change|switch|set)\s+(?:the\s+)?brand\s+(?:to|as)\s+"
                 r"([a-z0-9][a-z0-9&' -]{0,40})",
                 text,
                 re.IGNORECASE,
             )
+            if not brand_match:
+                brand_match = re.search(
+                    r"\b(?:brand\s+is|brand:|show|prefer|want)\s+"
+                    r"([a-z0-9][a-z0-9&' -]{0,40})",
+                    text,
+                    re.IGNORECASE,
+                )
             if brand_match:
                 brand = brand_match.group(1).strip(" .,!?:;")
+                brand = re.split(
+                    r"[,.;!?]|\b(?:if possible|if available|i don't like|"
+                    r"i do not like|no longer|anymore)\b",
+                    brand,
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0].strip()
                 # Stop at common constraint words.
                 brand = re.split(
                     r"\b(?:under|below|over|above|in|with|size|color|colour|for|women(?:'s)?|womens|men(?:'s)?|mens|female|male|unisex|ladies|gents|"
