@@ -80,6 +80,7 @@ SHOPPING_INTENT_PATTERN = re.compile(
     r"price of|cost of|how much is|how much does|"
     r"under ₹?\s*\d|below ₹?\s*\d|over ₹?\s*\d|above ₹?\s*\d|"
     r"cheapest|best deal|"
+    r"high heels|block heels|kitten heels|stilettos|heels|pumps|sandals|flats|"
     r"kurta|saree|sari|t[\s-]?shirt|shirt|jeans|trousers|"
     r"running shoes|shoes|sneakers|dress|jacket|coat|laptop|"
     r"smartphone|mobile phone|headphones|earbuds|smartwatch|watch|"
@@ -99,6 +100,7 @@ SHOPPING_FOLLOWUP_PATTERN = re.compile(
     r"in red|in blue|in green|in black|in white|in pink|in yellow|"
     r"in brown|in grey|in gray|"
     r"change the color|change the size|"
+    r"change (?:the )?brand|switch (?:the )?brand|set (?:the )?brand|"
     r"same brand|another brand|"
     r"only show|filter by|remove the filter|"
     r"those products|these products|those ones|these ones|"
@@ -115,6 +117,13 @@ SHOPPING_FOLLOWUP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+CONTEXT_SUMMARY_PATTERN = re.compile(
+    r"\b(?:list|show|summari[sz]e|what(?:'s| is| are| was| were))\b"
+    r".{0,120}\b(?:requirements?|filters?|preferences?|criteria|"
+    r"budget|brand|colou?r)\b",
+    re.IGNORECASE,
+)
+
 COLOR_NAMES = (
     "red", "blue", "green", "black", "white", "pink", "yellow",
     "brown", "grey", "gray", "purple", "orange", "navy", "beige",
@@ -127,6 +136,41 @@ def _has_shopping_category(state):
         return False
     category = state.get("category")
     return isinstance(category, str) and bool(category.strip())
+
+
+def _format_saved_filters(state):
+    """Format only filters that ContextLock actually stores."""
+    labels = (
+        ("Product", "category"),
+        ("Brand", "brand"),
+        ("Audience", "gender"),
+        ("Size", "size"),
+        ("Color", "color"),
+    )
+    parts = [
+        f"{label}: {state[field]}"
+        for label, field in labels
+        if state.get(field) not in (None, "")
+    ]
+
+    minimum = state.get("min_price")
+    maximum = state.get("max_price")
+    if minimum is not None and maximum is not None:
+        parts.append(f"Budget: ₹{minimum}–₹{maximum}")
+    elif maximum is not None:
+        parts.append(f"Budget: up to ₹{maximum}")
+    elif minimum is not None:
+        parts.append(f"Budget: from ₹{minimum}")
+
+    if not parts:
+        return "There are no saved shopping filters in this chat yet."
+
+    return (
+        "The shopping filters currently saved by Verity are: "
+        + "; ".join(parts)
+        + ". Walking purpose and wet-weather grip are not currently tracked "
+        "as structured search filters."
+    )
 
 
 def normalize_shopping_followup(message):
@@ -171,6 +215,7 @@ def is_shopping_request(message, shopping_state=None):
     # Compact queries such as "blue kurta" or "Nike shoes".
     category_words = re.compile(
         r"\b("
+        r"high heels|block heels|kitten heels|stilettos|heels|pumps|sandals|flats|"
         r"kurta|saree|sari|t[\s-]?shirt|shirt|jeans|trousers|"
         r"running shoes|shoes|sneakers|dress|jacket|coat|laptop|"
         r"smartphone|headphones|earbuds|smartwatch|watch|handbag|"
@@ -331,7 +376,15 @@ class VerityAI:
 
         # Detect follow-ups against the existing context BEFORE updating it.
         shopping_state = self.lock.state if context_lock else {}
-        shopping_request = is_shopping_request(context_message, shopping_state)
+        context_summary_request = bool(
+            context_lock
+            and self.lock.state
+            and CONTEXT_SUMMARY_PATTERN.search(context_message)
+        )
+        shopping_request = (
+            not context_summary_request
+            and is_shopping_request(context_message, shopping_state)
+        )
         gender_filter = str(gender_filter or "").strip().lower()
         if gender_filter not in {"", "all", "men", "women", "unisex"}:
             gender_filter = ""
@@ -429,6 +482,29 @@ class VerityAI:
         )
 
         reply, usage = call_llm(system, self.history, safe_message)
+
+        # Product facts must come from the search provider, not free-form model
+        # generation. Product cards contain the verified listing details.
+        if context_summary_request:
+            reply = _format_saved_filters(self.lock.state)
+        elif shopping_request:
+            items = (
+                products.get("items", [])
+                if isinstance(products, dict)
+                else []
+            )
+            if items:
+                reply = (
+                    f"I found {len(items)} product listing(s) for your current "
+                    "search. Review the product cards below for the listing "
+                    "details, and confirm size and stock on the retailer's page."
+                )
+            else:
+                reply = (
+                    products.get("note", "No verified matching listings were found.")
+                    if isinstance(products, dict)
+                    else "No verified matching listings were found."
+                )
 
         # Store only redacted messages. History persists while server.py
         # reuses this VerityAI instance for the same chat/session ID.
